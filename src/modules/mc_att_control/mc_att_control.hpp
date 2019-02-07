@@ -61,6 +61,8 @@
 
 #include <AttitudeControl.hpp>
 
+#include <flight_test_input/flight_test_input.h>
+
 /**
  * Multicopter attitude control app start / stop handling function
  */
@@ -196,6 +198,8 @@ private:
 	MultirotorMixer::saturation_status _saturation_status{};
 
 	perf_counter_t	_loop_perf;			/**< loop performance counter */
+
+	FlightTestInput _flight_test_input;
 
 	math::LowPassFilter2pVector3f _lp_filters_d{initial_update_rate_hz, 50.f};	/**< low-pass filters for D-term (roll, pitch & yaw) */
 	static constexpr const float initial_update_rate_hz = 250.f; /**< loop update rate used for initialization */

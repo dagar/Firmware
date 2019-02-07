@@ -46,4 +46,5 @@ px4_add_module(
 		conversion
 		mathlib
 		AttitudeControl
+		flight_test_input
 	)

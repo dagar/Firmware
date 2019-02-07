@@ -495,6 +495,10 @@ MulticopterAttitudeControl::generate_attitude_setpoint(float dt, bool reset_yaw_
 		attitude_setpoint.pitch_body = atan2f(z_roll_pitch_sp(0), z_roll_pitch_sp(2));
 	}
 
+	attitude_setpoint.roll_body = _flight_test_input.inject(7, attitude_setpoint.roll_body);
+	attitude_setpoint.pitch_body = _flight_test_input.inject(8, attitude_setpoint.pitch_body);
+	attitude_setpoint.yaw_body = _flight_test_input.inject(9, attitude_setpoint.yaw_body);
+
 	/* copy quaternion setpoint to attitude setpoint topic */
 	Quatf q_sp = Eulerf(attitude_setpoint.roll_body, attitude_setpoint.pitch_body, attitude_setpoint.yaw_body);
 	q_sp.copyTo(attitude_setpoint.q_d);
@@ -531,6 +535,11 @@ MulticopterAttitudeControl::control_attitude()
 	_thrust_sp = -_v_att_sp.thrust_body[2];
 
 	_rates_sp = _attitude_control.update(Quatf(_v_att.q), Quatf(_v_att_sp.q_d), _v_att_sp.yaw_sp_move_rate);
+
+	/* flight test input injection */
+	_rates_sp(0) = _flight_test_input.inject(4, _rates_sp(0));
+	_rates_sp(1) = _flight_test_input.inject(5, _rates_sp(1));
+	_rates_sp(2) = _flight_test_input.inject(6, _rates_sp(2));
 }
 
 /*
@@ -699,6 +708,11 @@ MulticopterAttitudeControl::publish_actuator_controls()
 	_actuators.timestamp = hrt_absolute_time();
 	_actuators.timestamp_sample = _sensor_gyro.timestamp;
 
+	/* flight test input injection */
+	_actuators.control[0] = _flight_test_input.inject(1, _actuators.control[0]);
+	_actuators.control[1] = _flight_test_input.inject(2, _actuators.control[1]);
+	_actuators.control[2] = _flight_test_input.inject(3, _actuators.control[2]);
+
 	/* scale effort by battery status */
 	if (_param_mc_bat_scale_en.get() && _battery_status.scale > 0.0f) {
 		for (int i = 0; i < 4; i++) {
@@ -782,6 +796,8 @@ MulticopterAttitudeControl::run()
 			// Guard against too small (< 0.2ms) and too large (> 20ms) dt's.
 			const float dt = math::constrain(((now - last_run) / 1e6f), 0.0002f, 0.02f);
 			last_run = now;
+
+			_flight_test_input.update(dt);
 
 			/* copy gyro data */
 			orb_copy(ORB_ID(sensor_gyro), _sensor_gyro_sub[_selected_gyro], &_sensor_gyro);
