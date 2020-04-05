@@ -53,6 +53,8 @@
 #include <lib/mathlib/mathlib.h>
 #include <lib/systemlib/mavlink_log.h>
 #include <lib/version/version.h>
+#include <px4_platform_common/px4_work_queue/WorkItemSingleShot.hpp>
+#include <uORB/Publication.hpp>
 
 #include "mavlink_receiver.h"
 #include "mavlink_main.h"
@@ -94,7 +96,8 @@ hrt_abstime Mavlink::_first_start_time = {0};
 bool Mavlink::_boot_complete = false;
 
 Mavlink::Mavlink() :
-	ModuleParams(nullptr)
+	ModuleParams(nullptr),
+	ScheduledWorkItem(MODULE_NAME, px4::serial_port_to_wq(nullptr))
 {
 	// initialise parameter cache
 	mavlink_update_parameters();
@@ -126,25 +129,10 @@ Mavlink::Mavlink() :
 
 Mavlink::~Mavlink()
 {
-	if (_task_running) {
-		/* task wakes up every 10ms or so at the longest */
-		_task_should_exit = true;
+	ScheduleClear();
 
-		/* wait for a second for the task to quit at our request */
-		unsigned i = 0;
-
-		do {
-			/* wait 20ms */
-			px4_usleep(20000);
-
-			/* if we have given up, kill it */
-			if (++i > 50) {
-				//TODO store main task handle in Mavlink instance to allow killing task
-				//task_delete(_mavlink_task);
-				break;
-			}
-		} while (_task_running);
-	}
+	_task_should_exit = true;
+	_task_running = false;
 
 	perf_free(_loop_perf);
 	perf_free(_loop_interval_perf);
@@ -413,8 +401,12 @@ Mavlink::forward_message(const mavlink_message_t *msg, Mavlink *self)
 }
 
 int
-Mavlink::mavlink_open_uart(const int baud, const char *uart_name, const FLOW_CONTROL_MODE flow_control)
+Mavlink::mavlink_open_uart(const char *uart_name, const int baud, const FLOW_CONTROL_MODE flow_control)
 {
+	if (!uart_name) {
+		return -1;
+	}
+
 #ifndef B460800
 #define B460800 460800
 #endif
@@ -707,7 +699,6 @@ Mavlink::get_free_tx_buf()
 
 void Mavlink::send_start(int length)
 {
-	pthread_mutex_lock(&_send_mutex);
 	_last_write_try_time = hrt_absolute_time();
 
 	// check if there is space in the buffer
@@ -728,7 +719,6 @@ void Mavlink::send_start(int length)
 void Mavlink::send_finish()
 {
 	if (_tx_buffer_low || (_buf_fill == 0)) {
-		pthread_mutex_unlock(&_send_mutex);
 		return;
 	}
 
@@ -789,8 +779,6 @@ void Mavlink::send_finish()
 	}
 
 	_buf_fill = 0;
-
-	pthread_mutex_unlock(&_send_mutex);
 }
 
 void Mavlink::send_bytes(const uint8_t *buf, unsigned packet_len)
@@ -1041,32 +1029,38 @@ Mavlink::init_udp()
 }
 #endif // MAVLINK_UDP
 
-void
-Mavlink::handle_message(const mavlink_message_t *msg)
+void Mavlink::handle_message(const mavlink_message_t *msg)
 {
-	/*
-	 *  NOTE: this is called from the receiver thread
-	 */
+	/* handle packet with mission manager */
+	_mission_manager.handle_message(msg);
+
+	/* handle packet with parameter component */
+	_parameters_manager.handle_message(msg);
+
+	if (ftp_enabled()) {
+		/* handle packet with ftp component */
+		_mavlink_ftp.handle_message(msg);
+	}
+
+	/* handle packet with log component */
+	_mavlink_log_handler.handle_message(msg);
 
 	if (get_forwarding_on()) {
 		/* forward any messages to other mavlink instances */
 		Mavlink::forward_message(msg, this);
-	}
 
-	// Special case for gimbals that need to forward GIMBAL_DEVICE_ATTITUDE_STATUS.
-	else if (msg->msgid == MAVLINK_MSG_ID_GIMBAL_DEVICE_ATTITUDE_STATUS) {
+	} else if (msg->msgid == MAVLINK_MSG_ID_GIMBAL_DEVICE_ATTITUDE_STATUS) {
+		// Special case for gimbals that need to forward GIMBAL_DEVICE_ATTITUDE_STATUS.
 		Mavlink::forward_message(msg, this);
 	}
 }
 
-void
-Mavlink::send_statustext_info(const char *string)
+void Mavlink::send_statustext_info(const char *string)
 {
 	mavlink_log_info(&_mavlink_log_pub, "%s", string);
 }
 
-void
-Mavlink::send_statustext_critical(const char *string)
+void Mavlink::send_statustext_critical(const char *string)
 {
 	mavlink_log_critical(&_mavlink_log_pub, "%s", string);
 }
@@ -1147,8 +1141,7 @@ Mavlink::send_autopilot_capabilities()
 	return false;
 }
 
-void
-Mavlink::send_protocol_version()
+void Mavlink::send_protocol_version()
 {
 	mavlink_protocol_version_t msg = {};
 
@@ -1169,8 +1162,7 @@ Mavlink::send_protocol_version()
 	set_proto_version(curr_proto_ver);
 }
 
-int
-Mavlink::configure_stream(const char *stream_name, const float rate)
+int Mavlink::configure_stream(const char *stream_name, const float rate)
 {
 	PX4_DEBUG("configure_stream(%s, %.3f)", stream_name, (double)rate);
 
@@ -1453,8 +1445,7 @@ Mavlink::update_rate_mult()
 	_rate_mult = math::constrain(_rate_mult, 0.05f, 1.0f);
 }
 
-void
-Mavlink::update_radio_status(const radio_status_s &radio_status)
+void Mavlink::update_radio_status(const radio_status_s &radio_status)
 {
 	_rstatus = radio_status;
 	_radio_status_available = true;
@@ -1482,8 +1473,7 @@ Mavlink::update_radio_status(const radio_status_s &radio_status)
 	}
 }
 
-int
-Mavlink::configure_streams_to_default(const char *configure_single_stream)
+int Mavlink::configure_streams_to_default(const char *configure_single_stream)
 {
 	int ret = 0;
 	bool stream_configured = false;
@@ -1839,8 +1829,18 @@ Mavlink::configure_streams_to_default(const char *configure_single_stream)
 	return ret;
 }
 
-int
-Mavlink::task_main(int argc, char *argv[])
+void Mavlink::initializer_trampoline(void *argument)
+{
+	Mavlink *m = new Mavlink();
+	setup_data_t *data = (setup_data_t *)argument;
+	data->return_code = m->setup(data->argc, data->argv);
+
+	if (data->return_code != PX4_OK) {
+		delete m;
+	}
+}
+
+int Mavlink::setup(int argc, char *argv[])
 {
 	int ch;
 	_baudrate = 57600;
@@ -1849,10 +1849,6 @@ Mavlink::task_main(int argc, char *argv[])
 	FLOW_CONTROL_MODE _flow_control = FLOW_CONTROL_AUTO;
 
 	_interface_name = nullptr;
-
-	// We don't care about the name and verb at this point.
-	argc -= 2;
-	argv += 2;
 
 	/* don't exit from getopt loop to leave getopt global variables in consistent state,
 	 * set error flag instead */
@@ -1892,10 +1888,11 @@ Mavlink::task_main(int argc, char *argv[])
 			break;
 
 		case 'd':
-			_device_name = myoptarg;
-			set_protocol(Protocol::SERIAL);
+			if (access(myoptarg, F_OK) == 0) {
+				strcpy(_device_name, myoptarg);
+				set_protocol(Protocol::SERIAL);
 
-			if (access(_device_name, F_OK) == -1) {
+			} else {
 				PX4_ERR("Device %s does not exist", _device_name);
 				err_flag = true;
 			}
@@ -2084,7 +2081,7 @@ Mavlink::task_main(int argc, char *argv[])
 	}
 
 	/* USB serial is indicated by /dev/ttyACMx */
-	if (strcmp(_device_name, "/dev/ttyACM0") == OK || strcmp(_device_name, "/dev/ttyACM1") == OK) {
+	if ((strcmp(_device_name, "/dev/ttyACM0") == 0) || (strcmp(_device_name, "/dev/ttyACM1") == 0)) {
 		if (_datarate == 0) {
 			_datarate = 800000;
 		}
@@ -2116,6 +2113,8 @@ Mavlink::task_main(int argc, char *argv[])
 			return PX4_ERROR;
 		}
 
+		ChangeWorkQeue(px4::serial_port_to_wq(_device_name));
+
 		PX4_INFO("mode: %s, data rate: %d B/s on %s @ %dB",
 			 mavlink_mode_str(_mode), _datarate, _device_name, _baudrate);
 
@@ -2131,6 +2130,9 @@ Mavlink::task_main(int argc, char *argv[])
 			return PX4_ERROR;
 		}
 
+		// TODO: Which WQ for UDP?
+		ChangeWorkQeue(px4::wq_configurations::hp_default);
+
 		PX4_INFO("mode: %s, data rate: %d B/s on udp port %hu remote port %hu",
 			 mavlink_mode_str(_mode), _datarate, _network_port, _remote_port);
 	}
@@ -2143,9 +2145,6 @@ Mavlink::task_main(int argc, char *argv[])
 	}
 
 	set_channel();
-
-	/* initialize send mutex */
-	pthread_mutex_init(&_send_mutex, nullptr);
 
 	/* if we are passing on mavlink messages, we need to prepare a buffer for this instance */
 	if (_forwarding_on) {
@@ -2161,6 +2160,8 @@ Mavlink::task_main(int argc, char *argv[])
 		/* initialize message buffer mutex */
 		pthread_mutex_init(&_message_buffer_mutex, nullptr);
 	}
+
+	_task_running = true;
 
 	/* Activate sending the data by default (for the IRIDIUM mode it will be disabled after the first round of packages is sent)*/
 	_transmitting_enabled = true;
@@ -2181,8 +2182,26 @@ Mavlink::task_main(int argc, char *argv[])
 
 		/* COMMAND_LONG stream: use unlimited rate to send all commands */
 		configure_stream("COMMAND_LONG");
-
 	}
+
+	/* PARAM_VALUE stream */
+	_parameters_manager.set_interval(3000);
+	_streams.add(&_parameters_manager);
+
+	/* MAVLINK_FTP stream */
+	_mavlink_ftp.set_interval(12500);
+	_streams.add(&_mavlink_ftp);
+
+	/* MAVLINK_Log_Handler */
+	_mavlink_log_handler.set_interval(12500);
+	_streams.add(&_mavlink_log_handler);
+
+	/* MISSION_STREAM stream, actually sends all MISSION_XXX messages at some rate depending on
+	 * remote requests rate. Rate specified here controls how much bandwidth we will reserve for
+	 * mission messages. */
+	_mission_manager.set_interval(100000);
+	//_mission_manager.set_verbose(_verbose);
+	_streams.add(&_mission_manager);
 
 	if (configure_streams_to_default() != 0) {
 		PX4_ERR("configure_streams_to_default() failed");
@@ -2203,7 +2222,7 @@ Mavlink::task_main(int argc, char *argv[])
 
 	/* open the UART device after setting the instance, as it might block */
 	if (get_protocol() == Protocol::SERIAL) {
-		_uart_fd = mavlink_open_uart(_baudrate, _device_name, _flow_control);
+		_uart_fd = mavlink_open_uart(_device_name, _baudrate, _flow_control);
 
 		if (_uart_fd < 0 && !_is_usb_uart) {
 			PX4_ERR("could not open %s", _device_name);
@@ -2230,25 +2249,60 @@ Mavlink::task_main(int argc, char *argv[])
 	}
 
 	/* start the MAVLink receiver last to avoid a race */
-	MavlinkReceiver::receive_start(&_receive_thread, this);
+	ScheduleDelayed(100_ms);
 
 	_mavlink_start_time = hrt_absolute_time();
 
-	while (!_task_should_exit) {
-		/* main loop */
-		px4_usleep(_main_loop_delay);
+	return PX4_OK;
+}
 
-		if (!should_transmit()) {
-			check_requested_subscriptions();
-			continue;
+void Mavlink::Run()
+{
+	if (_task_should_exit) {
+		delete _subscribe_to_stream;
+		_subscribe_to_stream = nullptr;
+
+		/* delete streams */
+		_streams.clear();
+
+		if (_uart_fd >= 0 && !_is_usb_uart) {
+			/* close UART */
+			::close(_uart_fd);
 		}
 
-		perf_count(_loop_interval_perf);
+		if (_socket_fd >= 0) {
+			close(_socket_fd);
+			_socket_fd = -1;
+		}
+
+		if (_forwarding_on) {
+			message_buffer_destroy();
+			pthread_mutex_destroy(&_message_buffer_mutex);
+		}
+
+		if (_mavlink_ulog) {
+			_mavlink_ulog->stop();
+			_mavlink_ulog = nullptr;
+		}
+
+		PX4_INFO("exiting channel %i", (int)_channel);
+		return;
+	}
+
+	if (!should_transmit()) {
+		check_requested_subscriptions();
+		ScheduleDelayed(10_ms);
+		return;
+	}
+
+	if (!_task_should_exit) {
 		perf_begin(_loop_perf);
 
-		const hrt_abstime t = hrt_absolute_time();
+		hrt_abstime t = hrt_absolute_time();
 
 		update_rate_mult();
+
+		_mission_manager.check_active_mission();
 
 		// check for parameter updates
 		if (_parameter_update_sub.updated()) {
@@ -2382,6 +2436,7 @@ Mavlink::task_main(int argc, char *argv[])
 			}
 		}
 
+
 		/* check for shell output */
 		if (_mavlink_shell && _mavlink_shell->available() > 0) {
 			if (get_free_tx_buf() >= MAVLINK_MSG_ID_SERIAL_CONTROL_LEN + MAVLINK_NUM_NON_PAYLOAD_BYTES) {
@@ -2439,6 +2494,9 @@ Mavlink::task_main(int argc, char *argv[])
 				}
 			}
 		}
+
+		// TODO: improve
+		_mavlink_receiver.update();
 
 		/* pass messages from other UARTs */
 		if (_forwarding_on) {
@@ -2513,40 +2571,7 @@ Mavlink::task_main(int argc, char *argv[])
 		perf_end(_loop_perf);
 	}
 
-	/* first wait for threads to complete before tearing down anything */
-	pthread_join(_receive_thread, nullptr);
-
-	delete _subscribe_to_stream;
-	_subscribe_to_stream = nullptr;
-
-	/* delete streams */
-	_streams.clear();
-
-	if (_uart_fd >= 0 && !_is_usb_uart) {
-		/* close UART */
-		::close(_uart_fd);
-	}
-
-	if (_socket_fd >= 0) {
-		close(_socket_fd);
-		_socket_fd = -1;
-	}
-
-	if (_forwarding_on) {
-		message_buffer_destroy();
-		pthread_mutex_destroy(&_message_buffer_mutex);
-	}
-
-	if (_mavlink_ulog) {
-		_mavlink_ulog->stop();
-		_mavlink_ulog = nullptr;
-	}
-
-	pthread_mutex_destroy(&_send_mutex);
-
-	PX4_INFO("exiting channel %i", (int)_channel);
-
-	return OK;
+	ScheduleDelayed(_main_loop_delay);
 }
 
 void Mavlink::check_requested_subscriptions()
@@ -2692,31 +2717,7 @@ void Mavlink::configure_sik_radio()
 	}
 }
 
-int Mavlink::start_helper(int argc, char *argv[])
-{
-	/* create the instance in task context */
-	Mavlink *instance = new Mavlink();
-
-	int res;
-
-	if (!instance) {
-
-		/* out of memory */
-		res = -ENOMEM;
-		PX4_ERR("OUT OF MEM");
-
-	} else {
-		/* this will actually only return once MAVLink exits */
-		res = instance->task_main(argc, argv);
-		instance->_task_running = false;
-
-	}
-
-	return res;
-}
-
-int
-Mavlink::start(int argc, char *argv[])
+int Mavlink::start(int argc, char *argv[])
 {
 	MavlinkULog::initialize();
 	MavlinkCommandSender::initialize();
@@ -2730,51 +2731,17 @@ Mavlink::start(int argc, char *argv[])
 		return 1;
 	}
 
-	// Instantiate thread
-	char buf[24];
-	sprintf(buf, "mavlink_if%d", ic);
+	setup_data_t init_data{argc, argv};
 
-	// This is where the control flow splits
-	// between the starting task and the spawned
-	// task - start_helper() only returns
-	// when the started task exits.
-	px4_task_spawn_cmd(buf,
-			   SCHED_DEFAULT,
-			   SCHED_PRIORITY_DEFAULT,
-			   2896 + MAVLINK_NET_ADDED_STACK,
-			   (px4_main_t)&Mavlink::start_helper,
-			   (char *const *)argv);
+	// initialize the object and bus on the work queue thread - this will also probe for the device
+	px4::WorkItemSingleShot initializer(px4::serial_port_to_wq(nullptr), initializer_trampoline, &init_data);
+	initializer.ScheduleNow();
+	initializer.wait();
 
-	// Ensure that this shell command
-	// does not return before the instance
-	// is fully initialized. As this is also
-	// the only path to create a new instance,
-	// this is effectively a lock on concurrent
-	// instance starting. XXX do a real lock.
-
-	// Sleep 500 us between each attempt
-	const unsigned sleeptime = 500;
-
-	// Wait 100 ms max for the startup.
-	const unsigned limit = 100 * 1000 / sleeptime;
-
-	unsigned count = 0;
-
-	while (ic == Mavlink::instance_count() && count < limit) {
-		px4_usleep(sleeptime);
-		count++;
-	}
-
-	if (ic == Mavlink::instance_count()) {
-		return PX4_ERROR;
-
-	} else {
-		return PX4_OK;
-	}
+	return init_data.return_code;
 }
 
-void
-Mavlink::display_status()
+void Mavlink::display_status()
 {
 	if (_tstatus.heartbeat_type_gcs) {
 		printf("\tGCS heartbeat valid\n");
@@ -2902,7 +2869,7 @@ Mavlink::display_status_streams()
 int
 Mavlink::stream_command(int argc, char *argv[])
 {
-	const char *device_name = DEFAULT_DEVICE_NAME;
+	const char *device_name = nullptr;
 	float rate = -1.0f;
 	const char *stream_name = nullptr;
 #ifdef MAVLINK_UDP
@@ -3123,6 +3090,16 @@ extern "C" __EXPORT int mavlink_main(int argc, char *argv[])
 		usage();
 		return 1;
 	}
+
+	fprintf(stderr, "mavlink_main argc: %d", argc);
+
+	if (argc > 0) {
+		for (int i = 0; i < argc; i++) {
+			fprintf(stderr, "| argv[%d]=%s |", i, argv[i]);
+		}
+	}
+
+	fprintf(stderr, "\n");
 
 	if (!strcmp(argv[1], "start")) {
 		return Mavlink::start(argc, argv);

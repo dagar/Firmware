@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2012-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2012-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -41,10 +41,6 @@
 
 #pragma once
 
-#include "mavlink_ftp.h"
-#include "mavlink_log_handler.h"
-#include "mavlink_mission.h"
-#include "mavlink_parameters.h"
 #include "mavlink_timesync.h"
 #include "tune_publisher.h"
 
@@ -121,23 +117,7 @@ public:
 	MavlinkReceiver(Mavlink *parent);
 	~MavlinkReceiver() override;
 
-	/**
-	 * Start the receiver thread
-	 */
-	static void receive_start(pthread_t *thread, Mavlink *parent);
-
-	static void *start_helper(void *context);
-
-	/**
-	 * Set the cruising speed in offboard control
-	 *
-	 * Passing a negative value or leaving the parameter away will reset the cruising speed
-	 * to its default value.
-	 *
-	 * Sets cruising speed for current flight mode only (resets on mode changes).
-	 *
-	 */
-	void set_offb_cruising_speed(float speed = -1.0f);
+	void update();
 
 private:
 
@@ -210,8 +190,6 @@ private:
 
 	void CheckHeartbeats(const hrt_abstime &t, bool force = false);
 
-	void Run();
-
 	/**
 	 * Set the interval at which the given message stream is published.
 	 * The rate is the number of messages per second.
@@ -236,17 +214,8 @@ private:
 
 	void schedule_tune(const char *tune);
 
-	/**
-	 * @brief Updates the battery, optical flow, and flight ID subscribed parameters.
-	 */
-	void update_params();
-
 	Mavlink				*_mavlink;
 
-	MavlinkFTP			_mavlink_ftp;
-	MavlinkLogHandler		_mavlink_log_handler;
-	MavlinkMissionManager		_mission_manager;
-	MavlinkParametersManager	_parameters_manager;
 	MavlinkTimesync			_mavlink_timesync;
 
 	mavlink_status_t		_status{}; ///< receiver status, used for mavlink_parse_char()
@@ -376,8 +345,6 @@ private:
 	uORB::Subscription	_vehicle_status_sub{ORB_ID(vehicle_status)};
 	uORB::Subscription 	_actuator_controls_3_sub{ORB_ID(actuator_controls_3)};
 
-	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
-
 	// hil_sensor and hil_state_quaternion
 	enum SensorSource {
 		ACCEL		= 0b111,
@@ -427,8 +394,4 @@ private:
 		(ParamFloat<px4::params::SENS_FLOW_MINHGT>) _param_sens_flow_minhgt,
 		(ParamInt<px4::params::SENS_FLOW_ROT>)      _param_sens_flow_rot
 	);
-
-	// Disallow copy construction and move assignment.
-	MavlinkReceiver(const MavlinkReceiver &) = delete;
-	MavlinkReceiver operator=(const MavlinkReceiver &) = delete;
 };

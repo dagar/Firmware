@@ -56,7 +56,7 @@ using namespace time_literals;
 constexpr const char MavlinkFTP::_root_dir[];
 
 MavlinkFTP::MavlinkFTP(Mavlink *mavlink) :
-	_mavlink(mavlink)
+	MavlinkStream(mavlink)
 {
 	// initialize session
 	_session_info.fd = -1;
@@ -956,9 +956,8 @@ MavlinkFTP::_copy_file(const char *src_path, const char *dst_path, size_t length
 	return (length > 0) ? -1 : 0;
 }
 
-void MavlinkFTP::send()
+bool MavlinkFTP::send()
 {
-
 	if (_work_buffer1 || _work_buffer2) {
 		// free the work buffers if they are not used for a while
 		if (hrt_elapsed_time(&_last_work_buffer_access) > 2_s) {
@@ -986,7 +985,7 @@ void MavlinkFTP::send()
 
 	// Anything to stream?
 	if (!_session_info.stream_download) {
-		return;
+		return false;
 	}
 
 #ifndef MAVLINK_FTP_UNIT_TEST
@@ -997,14 +996,13 @@ void MavlinkFTP::send()
 #endif
 
 	if (max_bytes_to_send < get_size()) {
-		return;
+		return false;
 	}
 
 #endif
 
 	// Send stream packets until buffer is full
-
-	bool more_data;
+	bool more_data = false;
 
 	do {
 		more_data = false;
@@ -1102,4 +1100,6 @@ void MavlinkFTP::send()
 		ftp_msg.target_component = _session_info.stream_target_component_id;
 		_reply(&ftp_msg);
 	} while (more_data);
+
+	return true;
 }

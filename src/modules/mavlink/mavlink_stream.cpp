@@ -58,6 +58,10 @@ MavlinkStream::update(const hrt_abstime &t)
 {
 	update_data();
 
+	if (!updated()) {
+		return 0;
+	}
+
 	// If the message has never been sent before we want
 	// to send it immediately and can return right away
 	if (_last_sent == 0) {
@@ -94,6 +98,10 @@ MavlinkStream::update(const hrt_abstime &t)
 	}
 
 	const bool unlimited_rate = interval < 0;
+
+	if (!unlimited_rate) {
+		set_subscription_interval(interval);
+	}
 
 	// Send the message if it is due or
 	// if it will overrun the next scheduled send interval
