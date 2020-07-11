@@ -151,19 +151,19 @@ void Magnetometer::ParametersUpdate()
 		return;
 	}
 
-	_calibration_index = FindCalibrationIndex(SensorString(), _device_id);
+	_calibration_index = FindConfigurationIndex(ParamPrefix::CAL, SensorString(), _device_id);
 
 	if (_calibration_index >= 0) {
 
 		// CAL_MAGx_ROT
-		int32_t rotation_value = GetCalibrationParam(SensorString(), "ROT", _calibration_index);
+		int32_t rotation_value = GetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index);
 
 		if (_external) {
 			if ((rotation_value >= ROTATION_MAX) || (rotation_value < 0)) {
 				PX4_ERR("External %s %d (%d) invalid rotation %d, resetting to rotation none",
 					SensorString(), _device_id, _calibration_index, rotation_value);
 				rotation_value = ROTATION_NONE;
-				SetCalibrationParam(SensorString(), "ROT", _calibration_index, rotation_value);
+				SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, rotation_value);
 			}
 
 			set_rotation(static_cast<Rotation>(rotation_value));
@@ -173,7 +173,7 @@ void Magnetometer::ParametersUpdate()
 			if (rotation_value != -1) {
 				PX4_ERR("Internal %s %d (%d) invalid rotation %d, resetting",
 					SensorString(), _device_id, _calibration_index, rotation_value);
-				SetCalibrationParam(SensorString(), "ROT", _calibration_index, -1);
+				SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, -1);
 			}
 
 			// internal sensors follow board rotation
@@ -181,7 +181,7 @@ void Magnetometer::ParametersUpdate()
 		}
 
 		// CAL_MAGx_PRIO
-		_priority = GetCalibrationParam(SensorString(), "PRIO", _calibration_index);
+		_priority = GetConfigurationParam(ParamPrefix::CAL, SensorString(), "PRIO", _calibration_index);
 
 		if ((_priority < 0) || (_priority > 100)) {
 			// reset to default, -1 is the uninitialized parameter value
@@ -192,21 +192,21 @@ void Magnetometer::ParametersUpdate()
 					new_priority);
 			}
 
-			SetCalibrationParam(SensorString(), "PRIO", _calibration_index, new_priority);
+			SetConfigurationParam(ParamPrefix::CAL, SensorString(), "PRIO", _calibration_index, new_priority);
 			_priority = new_priority;
 		}
 
 		// CAL_MAGx_OFF{X,Y,Z}
-		set_offset(GetCalibrationParamsVector3f(SensorString(), "OFF", _calibration_index));
+		set_offset(GetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "OFF", _calibration_index));
 
 		// CAL_MAGx_SCALE{X,Y,Z}
-		set_scale(GetCalibrationParamsVector3f(SensorString(), "SCALE", _calibration_index));
+		set_scale(GetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "SCALE", _calibration_index));
 
 		// CAL_MAGx_ODIAG{X,Y,Z}
-		set_offdiagonal(GetCalibrationParamsVector3f(SensorString(), "ODIAG", _calibration_index));
+		set_offdiagonal(GetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "ODIAG", _calibration_index));
 
 		// CAL_MAGx_COMP{X,Y,Z}
-		_power_compensation = GetCalibrationParamsVector3f(SensorString(), "COMP", _calibration_index);
+		_power_compensation = GetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "COMP", _calibration_index);
 
 	} else {
 		Reset();
@@ -241,23 +241,24 @@ bool Magnetometer::ParametersSave()
 	if (_calibration_index >= 0) {
 		// save calibration
 		bool success = true;
-		success &= SetCalibrationParam(SensorString(), "ID", _calibration_index, _device_id);
-		success &= SetCalibrationParam(SensorString(), "PRIO", _calibration_index, _priority);
-		success &= SetCalibrationParamsVector3f(SensorString(), "OFF", _calibration_index, _offset);
+		success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ID", _calibration_index, _device_id);
+		success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "PRIO", _calibration_index, _priority);
+		success &= SetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "OFF", _calibration_index, _offset);
 
 		const Vector3f scale{_scale.diag()};
-		success &= SetCalibrationParamsVector3f(SensorString(), "SCALE", _calibration_index, scale);
+		success &= SetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "SCALE", _calibration_index, scale);
 
 		const Vector3f off_diag{_scale(0, 1), _scale(0, 2), _scale(1, 2)};
-		success &= SetCalibrationParamsVector3f(SensorString(), "ODIAG", _calibration_index, off_diag);
+		success &= SetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "ODIAG", _calibration_index, off_diag);
 
-		success &= SetCalibrationParamsVector3f(SensorString(), "COMP", _calibration_index, _power_compensation);
+		success &= SetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "COMP", _calibration_index,
+				_power_compensation);
 
 		if (_external) {
-			success &= SetCalibrationParam(SensorString(), "ROT", _calibration_index, (int32_t)_rotation_enum);
+			success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, (int32_t)_rotation_enum);
 
 		} else {
-			success &= SetCalibrationParam(SensorString(), "ROT", _calibration_index, -1);
+			success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, -1);
 		}
 
 		return success;

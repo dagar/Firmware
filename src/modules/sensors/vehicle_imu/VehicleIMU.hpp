@@ -33,7 +33,7 @@
 
 #pragma once
 
-#include "Integrator.hpp"
+#include "integrator/Integrator.hpp"
 
 #include <lib/mathlib/math/Limits.hpp>
 #include <lib/matrix/matrix/math.hpp>

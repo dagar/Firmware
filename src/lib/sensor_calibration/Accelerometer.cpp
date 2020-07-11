@@ -166,19 +166,19 @@ void Accelerometer::ParametersUpdate()
 		return;
 	}
 
-	_calibration_index = FindCalibrationIndex(SensorString(), _device_id);
+	_calibration_index = FindConfigurationIndex(ParamPrefix::CAL, SensorString(), _device_id);
 
 	if (_calibration_index >= 0) {
 
 		// CAL_ACCx_ROT
-		int32_t rotation_value = GetCalibrationParam(SensorString(), "ROT", _calibration_index);
+		int32_t rotation_value = GetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index);
 
 		if (_external) {
 			if ((rotation_value >= ROTATION_MAX) || (rotation_value < 0)) {
 				PX4_ERR("External %s %d (%d) invalid rotation %d, resetting to rotation none",
 					SensorString(), _device_id, _calibration_index, rotation_value);
 				rotation_value = ROTATION_NONE;
-				SetCalibrationParam(SensorString(), "ROT", _calibration_index, rotation_value);
+				SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, rotation_value);
 			}
 
 			set_rotation(static_cast<Rotation>(rotation_value));
@@ -188,7 +188,7 @@ void Accelerometer::ParametersUpdate()
 			if (rotation_value != -1) {
 				PX4_ERR("Internal %s %d (%d) invalid rotation %d, resetting",
 					SensorString(), _device_id, _calibration_index, rotation_value);
-				SetCalibrationParam(SensorString(), "ROT", _calibration_index, -1);
+				SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, -1);
 			}
 
 			// internal sensors follow board rotation
@@ -196,7 +196,7 @@ void Accelerometer::ParametersUpdate()
 		}
 
 		// CAL_ACCx_PRIO
-		_priority = GetCalibrationParam(SensorString(), "PRIO", _calibration_index);
+		_priority = GetConfigurationParam(ParamPrefix::CAL, SensorString(), "PRIO", _calibration_index);
 
 		if ((_priority < 0) || (_priority > 100)) {
 			// reset to default, -1 is the uninitialized parameter value
@@ -207,15 +207,15 @@ void Accelerometer::ParametersUpdate()
 					new_priority);
 			}
 
-			SetCalibrationParam(SensorString(), "PRIO", _calibration_index, new_priority);
+			SetConfigurationParam(ParamPrefix::CAL, SensorString(), "PRIO", _calibration_index, new_priority);
 			_priority = new_priority;
 		}
 
 		// CAL_ACCx_OFF{X,Y,Z}
-		set_offset(GetCalibrationParamsVector3f(SensorString(), "OFF", _calibration_index));
+		set_offset(GetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "OFF", _calibration_index));
 
 		// CAL_ACCx_SCALE{X,Y,Z}
-		set_scale(GetCalibrationParamsVector3f(SensorString(), "SCALE", _calibration_index));
+		set_scale(GetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "SCALE", _calibration_index));
 
 	} else {
 		Reset();
@@ -248,16 +248,16 @@ bool Accelerometer::ParametersSave()
 	if (_calibration_index >= 0) {
 		// save calibration
 		bool success = true;
-		success &= SetCalibrationParam(SensorString(), "ID", _calibration_index, _device_id);
-		success &= SetCalibrationParam(SensorString(), "PRIO", _calibration_index, _priority);
-		success &= SetCalibrationParamsVector3f(SensorString(), "OFF", _calibration_index, _offset);
-		success &= SetCalibrationParamsVector3f(SensorString(), "SCALE", _calibration_index, _scale);
+		success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ID", _calibration_index, _device_id);
+		success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "PRIO", _calibration_index, _priority);
+		success &= SetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "OFF", _calibration_index, _offset);
+		success &= SetConfigurationParamsVector3f(ParamPrefix::CAL, SensorString(), "SCALE", _calibration_index, _scale);
 
 		if (_external) {
-			success &= SetCalibrationParam(SensorString(), "ROT", _calibration_index, (int32_t)_rotation_enum);
+			success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, (int32_t)_rotation_enum);
 
 		} else {
-			success &= SetCalibrationParam(SensorString(), "ROT", _calibration_index, -1);
+			success &= SetConfigurationParam(ParamPrefix::CAL, SensorString(), "ROT", _calibration_index, -1);
 		}
 
 		return success;

@@ -38,7 +38,7 @@
 #include <com/hex/equipment/flow/Measurement.hpp>
 
 #include <uORB/SubscriptionCallback.hpp>
-#include <uORB/topics/optical_flow.h>
+#include <uORB/topics/sensor_optical_flow.h>
 
 namespace uavcannode
 {
@@ -51,7 +51,7 @@ class FlowMeasurement :
 public:
 	FlowMeasurement(px4::WorkItem *work_item, uavcan::INode &node) :
 		UavcanPublisherBase(com::hex::equipment::flow::Measurement::DefaultDataTypeID),
-		uORB::SubscriptionCallbackWorkItem(work_item, ORB_ID(optical_flow)),
+		uORB::SubscriptionCallbackWorkItem(work_item, ORB_ID(sensor_optical_flow)),
 		uavcan::Publisher<com::hex::equipment::flow::Measurement>(node)
 	{}
 

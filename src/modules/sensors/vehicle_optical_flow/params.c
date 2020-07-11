@@ -97,3 +97,31 @@ PARAM_DEFINE_FLOAT(SENS_FLOW_MAXHGT, 3.0f);
  * @group Sensor Calibration
  */
 PARAM_DEFINE_FLOAT(SENS_FLOW_MAXR, 2.5f);
+
+/**
+ * Optical flow max rate.
+ *
+ * Optical flow maximum publication rate. This is an upper bound,
+ * actual data rate is still dependant on the sensor.
+ *
+ * @min 1
+ * @max 200
+ * @group Sensors
+ * @unit Hz
+ *
+ * @reboot_required true
+ *
+ */
+PARAM_DEFINE_FLOAT(SENS_FLOW_RATE, 50.0f);
+
+/**
+ * Sensors hub optical flow mode
+ *
+ * @value 0 Publish all
+ * @value 1 Publish highest priority
+ *
+ * @category system
+ * @reboot_required true
+ * @group Sensors
+ */
+PARAM_DEFINE_INT32(SENS_FLOW_MODE, 1);

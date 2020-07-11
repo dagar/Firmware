@@ -35,19 +35,14 @@
 
 static constexpr uint32_t TIME_us_TSWW = 11; //  - actually 10.5us
 
-PMW3901::PMW3901(I2CSPIBusOption bus_option, int bus, int devid, enum Rotation yaw_rotation, int bus_frequency,
-		 spi_mode_e spi_mode) :
+PMW3901::PMW3901(I2CSPIBusOption bus_option, int bus, int devid, int bus_frequency, spi_mode_e spi_mode) :
 	SPI(DRV_FLOW_DEVTYPE_PMW3901, MODULE_NAME, bus, devid, spi_mode, bus_frequency),
-	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus),
-	_sample_perf(perf_alloc(PC_ELAPSED, "pmw3901: read")),
-	_comms_errors(perf_alloc(PC_COUNT, "pmw3901: com err")),
-	_yaw_rotation(yaw_rotation)
+	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus)
 {
 }
 
 PMW3901::~PMW3901()
 {
-	// free perf counters
 	perf_free(_sample_perf);
 	perf_free(_comms_errors);
 }
@@ -208,19 +203,6 @@ PMW3901::sensorInit()
 int
 PMW3901::init()
 {
-	// get yaw rotation from sensor frame to body frame
-	param_t rot = param_find("SENS_FLOW_ROT");
-
-	if (rot != PARAM_INVALID) {
-		int32_t val = 0;
-		param_get(rot, &val);
-
-		_yaw_rotation = (enum Rotation)val;
-	}
-
-	/* For devices competing with NuttX SPI drivers on a bus (Crazyflie SD Card expansion board) */
-	SPI::set_lockmode(LOCK_THREADS);
-
 	/* do SPI init (and probe) first */
 	if (SPI::init() != OK) {
 		return PX4_ERROR;
@@ -308,8 +290,6 @@ PMW3901::RunImpl()
 	uint64_t dt_flow = timestamp - _previous_collect_timestamp;
 	_previous_collect_timestamp = timestamp;
 
-	_flow_dt_sum_usec += dt_flow;
-
 	readMotionCount(delta_x_raw, delta_y_raw, qual);
 
 	if (qual > 0) {
@@ -319,43 +299,25 @@ PMW3901::RunImpl()
 		_flow_quality_sum += qual;
 	}
 
-	// returns if the collect time has not been reached
-	if (_flow_dt_sum_usec < _collect_time) {
-		return;
-	}
-
 	delta_x = (float)_flow_sum_x / 385.0f;		// proportional factor + convert from pixels to radians
 	delta_y = (float)_flow_sum_y / 385.0f;		// proportional factor + convert from pixels to radians
 
 	optical_flow_s report{};
 	report.timestamp = timestamp;
 
-	report.pixel_flow_x_integral = static_cast<float>(delta_x);
-	report.pixel_flow_y_integral = static_cast<float>(delta_y);
-
-	// rotate measurements in yaw from sensor frame to body frame according to parameter SENS_FLOW_ROT
-	float zeroval = 0.0f;
-	rotate_3f(_yaw_rotation, report.pixel_flow_x_integral, report.pixel_flow_y_integral, zeroval);
-	rotate_3f(_yaw_rotation, report.gyro_x_rate_integral, report.gyro_y_rate_integral, report.gyro_z_rate_integral);
+	report.pixel_flow_x = static_cast<float>(delta_x);
+	report.pixel_flow_y = static_cast<float>(delta_y);
 
 	report.frame_count_since_last_readout = _flow_sample_counter;	// number of frames
-	report.integration_timespan = _flow_dt_sum_usec; 	// microseconds
 
 	report.sensor_id = 0;
 	report.quality = _flow_sample_counter > 0 ? _flow_quality_sum / _flow_sample_counter : 0;
-
-
-	/* No gyro on this board */
-	report.gyro_x_rate_integral = NAN;
-	report.gyro_y_rate_integral = NAN;
-	report.gyro_z_rate_integral = NAN;
 
 	// set (conservative) specs according to datasheet
 	report.max_flow_rate = 5.0f;       // Datasheet: 7.4 rad/s
 	report.min_ground_distance = 0.1f; // Datasheet: 80mm
 	report.max_ground_distance = 30.0f; // Datasheet: infinity
 
-	_flow_dt_sum_usec = 0;
 	_flow_sum_x = 0;
 	_flow_sum_y = 0;
 	_flow_sample_counter = 0;

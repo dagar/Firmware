@@ -39,14 +39,20 @@
 namespace calibration
 {
 
+enum class ParamPrefix : uint8_t {
+	CAL,
+	SENS
+};
+
 /**
- * @brief Find sensor's calibration index if it exists.
+ * @brief Find sensor's configuration index if it exists.
  *
- * @param sensor_type Calibration parameter abbreviated sensor string ("ACC", "GYRO", "MAG")
+ * @param prefix Configuration parameter prefix ("CAL", "SENS")
+ * @param sensor_type Configuration parameter abbreviated sensor string ("ACC", "GYRO", "MAG")
  * @param device_id
- * @return int8_t Valid calibration index on success, -1 otherwise
+ * @return int8_t Valid index on success, -1 otherwise
  */
-int8_t FindCalibrationIndex(const char *sensor_type, uint32_t device_id);
+int8_t FindConfigurationIndex(const ParamPrefix prefix, const char *sensor_type, uint32_t device_id);
 
 /**
  * @brief Get sensor calibration parameter value.
@@ -56,7 +62,8 @@ int8_t FindCalibrationIndex(const char *sensor_type, uint32_t device_id);
  * @param instance
  * @return int32_t The calibration value.
  */
-int32_t GetCalibrationParam(const char *sensor_type, const char *cal_type, uint8_t instance);
+int32_t GetConfigurationParam(const ParamPrefix prefix, const char *sensor_type, const char *cal_type,
+			      uint8_t instance);
 
 /**
  * @brief Set a single calibration paramter.
@@ -67,7 +74,8 @@ int32_t GetCalibrationParam(const char *sensor_type, const char *cal_type, uint8
  * @param value int32_t parameter value
  * @return true if the parameter name was valid and value saved successfully, false otherwise.
  */
-bool SetCalibrationParam(const char *sensor_type, const char *cal_type, uint8_t instance, int32_t value);
+bool SetConfigurationParam(const ParamPrefix prefix, const char *sensor_type, const char *cal_type, uint8_t instance,
+			   int32_t value);
 
 /**
  * @brief Get the Calibration Params Vector 3f object
@@ -77,7 +85,8 @@ bool SetCalibrationParam(const char *sensor_type, const char *cal_type, uint8_t 
  * @param instance Calibration index (0 - 3)
  * @return matrix::Vector3f Vector of calibration values.
  */
-matrix::Vector3f GetCalibrationParamsVector3f(const char *sensor_type, const char *cal_type, uint8_t instance);
+matrix::Vector3f GetConfigurationParamsVector3f(const ParamPrefix prefix, const char *sensor_type, const char *cal_type,
+		uint8_t instance);
 
 /**
  * @brief Set the Calibration Params Vector 3f object
@@ -88,8 +97,8 @@ matrix::Vector3f GetCalibrationParamsVector3f(const char *sensor_type, const cha
  * @param values Vector of calibration values x, y, z.
  * @return true if the parameter name was valid and all values saved successfully, false otherwise.
  */
-bool SetCalibrationParamsVector3f(const char *sensor_type, const char *cal_type, uint8_t instance,
-				  matrix::Vector3f values);
+bool SetConfigurationParamsVector3f(const ParamPrefix prefix, const char *sensor_type, const char *cal_type,
+				    uint8_t instance, matrix::Vector3f values);
 
 /**
  * @brief Get the board sensor level adjustment (SENS_BOARD_X_OFF, SENS_BOARD_Y_OFF, SENS_BOARD_Z_OFF).

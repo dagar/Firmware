@@ -76,6 +76,7 @@
 #include "vehicle_gps_position/VehicleGPSPosition.hpp"
 #include "vehicle_imu/VehicleIMU.hpp"
 #include "vehicle_magnetometer/VehicleMagnetometer.hpp"
+#include "vehicle_optical_flow/VehicleOpticalFlow.hpp"
 
 using namespace sensors;
 using namespace time_literals;
@@ -174,8 +175,9 @@ private:
 	VehicleAcceleration	_vehicle_acceleration;
 	VehicleAngularVelocity	_vehicle_angular_velocity;
 	VehicleAirData          *_vehicle_air_data{nullptr};
-	VehicleMagnetometer     *_vehicle_magnetometer{nullptr};
 	VehicleGPSPosition	*_vehicle_gps_position{nullptr};
+	VehicleMagnetometer     *_vehicle_magnetometer{nullptr};
+	VehicleOpticalFlow      *_vehicle_optical_flow{nullptr};
 
 	VehicleIMU      *_vehicle_imu_list[MAX_SENSOR_COUNT] {};
 
@@ -209,6 +211,7 @@ private:
 	void		InitializeVehicleGPSPosition();
 	void		InitializeVehicleIMU();
 	void		InitializeVehicleMagnetometer();
+	void            InitializeVehicleOpticalFlow();
 
 	DEFINE_PARAMETERS(
 		(ParamBool<px4::params::SYS_HAS_BARO>) _param_sys_has_baro,
@@ -278,6 +281,11 @@ Sensors::~Sensors()
 			vehicle_imu->Stop();
 			delete vehicle_imu;
 		}
+	}
+
+	if (_vehicle_optical_flow) {
+		_vehicle_optical_flow->Stop();
+		delete _vehicle_optical_flow;
 	}
 
 	perf_free(_loop_perf);
@@ -558,6 +566,20 @@ void Sensors::InitializeVehicleMagnetometer()
 	}
 }
 
+void Sensors::InitializeVehicleOpticalFlow()
+{
+	if (_vehicle_optical_flow == nullptr) {
+		if (orb_exists(ORB_ID(sensor_optical_flow), 0) == PX4_OK) {
+			_vehicle_optical_flow = new VehicleOpticalFlow();
+
+			if (_vehicle_optical_flow) {
+				_vehicle_optical_flow->Start();
+			}
+		}
+	}
+}
+
+
 void Sensors::Run()
 {
 	if (should_exit()) {
@@ -576,6 +598,7 @@ void Sensors::Run()
 		InitializeVehicleIMU();
 		InitializeVehicleGPSPosition();
 		InitializeVehicleMagnetometer();
+		InitializeVehicleOpticalFlow();
 		_voted_sensors_update.init(_sensor_combined);
 		parameter_update_poll(true);
 	}
@@ -616,6 +639,7 @@ void Sensors::Run()
 		InitializeVehicleIMU();
 		InitializeVehicleGPSPosition();
 		InitializeVehicleMagnetometer();
+		InitializeVehicleOpticalFlow();
 		_last_config_update = hrt_absolute_time();
 
 	} else {
@@ -713,6 +737,10 @@ int Sensors::print_status()
 			PX4_INFO_RAW("\n");
 			i->PrintStatus();
 		}
+	}
+
+	if (_vehicle_optical_flow) {
+		_vehicle_optical_flow->PrintStatus();
 	}
 
 	return 0;

@@ -42,7 +42,6 @@
 #include <drivers/device/i2c.h>
 #include <drivers/drv_hrt.h>
 #include <lib/conversion/rotation.h>
-#include <lib/parameters/param.h>
 #include <lib/perf/perf_counter.h>
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/defines.h>
@@ -51,7 +50,7 @@
 #include <px4_platform_common/module.h>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/topics/distance_sensor.h>
-#include <uORB/topics/optical_flow.h>
+#include <uORB/topics/sensor_optical_flow_integrated.h>
 
 /* Configuration Constants */
 #define I2C_FLOW_ADDRESS_DEFAULT    0x42	///< 7-bit address. 8-bit address is 0x84, range 0x42 - 0x49
@@ -75,8 +74,8 @@
 class PX4FLOW: public device::I2C, public I2CSPIDriver<PX4FLOW>
 {
 public:
-	PX4FLOW(I2CSPIBusOption bus_option, int bus, int address, uint8_t sonar_rotation, int bus_frequency,
-		int conversion_interval = PX4FLOW_CONVERSION_INTERVAL_DEFAULT, enum Rotation rotation = ROTATION_NONE);
+	PX4FLOW(I2CSPIBusOption bus_option, int bus, int bus_frequency, int address, Rotation rotation = ROTATION_NONE);
+
 	virtual ~PX4FLOW();
 
 	static I2CSPIDriverBase *instantiate(const BusCLIArguments &cli, const BusInstanceIterator &iterator,
@@ -91,26 +90,25 @@ public:
 	 * Perform a poll cycle; collect from the previous measurement
 	 * and start a new one.
 	 */
-	void				RunImpl();
-protected:
-	int			probe() override;
+	void RunImpl();
 
 private:
+	int probe() override;
 
-	uint8_t _sonar_rotation;
-	bool				_sensor_ok{false};
-	bool				_collect_phase{false};
+	uint8_t _sonar_rotation{ROTATION_NONE};
+	bool _sensor_ok{false};
+	bool _collect_phase{false};
 
-	uORB::PublicationMulti<optical_flow_s>		_px4flow_topic{ORB_ID(optical_flow)};
-	uORB::PublicationMulti<distance_sensor_s>	_distance_sensor_topic{ORB_ID(distance_sensor)};
+	uORB::PublicationMulti<sensor_optical_flow_integrated_s> _px4flow_topic{ORB_ID(sensor_optical_flow_integrated)};
+	uORB::PublicationMulti<distance_sensor_s> _distance_sensor_topic{ORB_ID(distance_sensor)};
 
-	perf_counter_t		_sample_perf;
-	perf_counter_t		_comms_errors;
+	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read"};
+	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com_err")};
 
-	enum Rotation       _sensor_rotation;
-	float 				_sensor_min_range{0.0f};
-	float 				_sensor_max_range{0.0f};
-	float 				_sensor_max_flow_rate{0.0f};
+	enum Rotation _sensor_rotation;
+	float _sensor_min_range{0.f};
+	float _sensor_max_range{0.f};
+	float _sensor_max_flow_rate{0.f};
 
 	i2c_frame _frame;
 	i2c_integral_frame _frame_integral;
@@ -122,7 +120,7 @@ private:
 	 * @param address	The I2C bus address to probe.
 	 * @return		True if the device is present.
 	 */
-	int					probe_address(uint8_t address);
+	int probe_address(uint8_t address);
 
 	/**
 	 * Initialise the automatic measurement state machine and start it.
@@ -130,22 +128,16 @@ private:
 	 * @note This function is called at open and error time.  It might make sense
 	 *       to make it more aggressive about resetting the bus in case of errors.
 	 */
-	void				start();
+	void start();
 
-	int					measure();
-	int					collect();
+	int measure();
+	int collect();
 
 };
 
-extern "C" __EXPORT int px4flow_main(int argc, char *argv[]);
-
-PX4FLOW::PX4FLOW(I2CSPIBusOption bus_option, int bus, int address, uint8_t sonar_rotation, int bus_frequency,
-		 int conversion_interval, enum Rotation rotation) :
+PX4FLOW::PX4FLOW(I2CSPIBusOption bus_option, int bus, int bus_frequency, int address, enum Rotation rotation) :
 	I2C(DRV_FLOW_DEVTYPE_PX4FLOW, MODULE_NAME, bus, address, bus_frequency),
 	I2CSPIDriver(MODULE_NAME, px4::device_bus_to_wq(get_device_id()), bus_option, bus, address),
-	_sonar_rotation(sonar_rotation),
-	_sample_perf(perf_alloc(PC_ELAPSED, MODULE_NAME": read")),
-	_comms_errors(perf_alloc(PC_COUNT, MODULE_NAME": com_err")),
 	_sensor_rotation(rotation)
 {
 }
@@ -156,8 +148,7 @@ PX4FLOW::~PX4FLOW()
 	perf_free(_comms_errors);
 }
 
-int
-PX4FLOW::init()
+int PX4FLOW::init()
 {
 	int ret = PX4_ERROR;
 
@@ -170,51 +161,12 @@ PX4FLOW::init()
 	/* sensor is ok, but we don't really know if it is within range */
 	_sensor_ok = true;
 
-	/* get yaw rotation from sensor frame to body frame */
-	param_t rot = param_find("SENS_FLOW_ROT");
-
-	if (rot != PARAM_INVALID) {
-		int32_t val = 6; // the recommended installation for the flow sensor is with the Y sensor axis forward
-		param_get(rot, &val);
-
-		_sensor_rotation = (enum Rotation)val;
-	}
-
-	/* get operational limits of the sensor */
-	param_t hmin = param_find("SENS_FLOW_MINHGT");
-
-	if (hmin != PARAM_INVALID) {
-		float val = 0.7;
-		param_get(hmin, &val);
-
-		_sensor_min_range = val;
-	}
-
-	param_t hmax = param_find("SENS_FLOW_MAXHGT");
-
-	if (hmax != PARAM_INVALID) {
-		float val = 3.0;
-		param_get(hmax, &val);
-
-		_sensor_max_range = val;
-	}
-
-	param_t ratemax = param_find("SENS_FLOW_MAXR");
-
-	if (ratemax != PARAM_INVALID) {
-		float val = 2.5;
-		param_get(ratemax, &val);
-
-		_sensor_max_flow_rate = val;
-	}
-
 	start();
 
 	return ret;
 }
 
-int
-PX4FLOW::probe()
+int PX4FLOW::probe()
 {
 	uint8_t val[I2C_FRAME_SIZE] {};
 
@@ -230,8 +182,7 @@ PX4FLOW::probe()
 	return measure();
 }
 
-int
-PX4FLOW::measure()
+int PX4FLOW::measure()
 {
 	/*
 	 * Send the command to begin a measurement.
@@ -248,8 +199,7 @@ PX4FLOW::measure()
 	return PX4_OK;
 }
 
-int
-PX4FLOW::collect()
+int PX4FLOW::collect()
 {
 	int ret = -EIO;
 
@@ -282,22 +232,20 @@ PX4FLOW::collect()
 		memcpy(&_frame_integral, val, I2C_INTEGRAL_FRAME_SIZE);
 	}
 
-
-	optical_flow_s report{};
+	sensor_optical_flow_integrated_s report{};
 
 	report.timestamp = hrt_absolute_time();
-	report.pixel_flow_x_integral = static_cast<float>(_frame_integral.pixel_flow_x_integral) / 10000.0f;//convert to radians
-	report.pixel_flow_y_integral = static_cast<float>(_frame_integral.pixel_flow_y_integral) / 10000.0f;//convert to radians
-	report.frame_count_since_last_readout = _frame_integral.frame_count_since_last_readout;
-	report.ground_distance_m = static_cast<float>(_frame_integral.ground_distance) / 1000.0f;//convert to meters
+	report.pixel_flow_x_integral = static_cast<float>(_frame_integral.pixel_flow_x_integral) /
+				       10000.0f; // convert to radians
+	report.pixel_flow_y_integral = static_cast<float>(_frame_integral.pixel_flow_y_integral) /
+				       10000.0f; // convert to radians
+	//report.frame_count_since_last_readout = _frame_integral.frame_count_since_last_readout;
 	report.quality = _frame_integral.qual; //0:bad ; 255 max quality
-	report.gyro_x_rate_integral = static_cast<float>(_frame_integral.gyro_x_rate_integral) / 10000.0f; //convert to radians
-	report.gyro_y_rate_integral = static_cast<float>(_frame_integral.gyro_y_rate_integral) / 10000.0f; //convert to radians
-	report.gyro_z_rate_integral = static_cast<float>(_frame_integral.gyro_z_rate_integral) / 10000.0f; //convert to radians
+	report.gyro_x_rate_integral = static_cast<float>(_frame_integral.gyro_x_rate_integral) / 10000.0f; // convert to radians
+	report.gyro_y_rate_integral = static_cast<float>(_frame_integral.gyro_y_rate_integral) / 10000.0f; // convert to radians
+	report.gyro_z_rate_integral = static_cast<float>(_frame_integral.gyro_z_rate_integral) / 10000.0f; // convert to radians
 	report.integration_timespan = _frame_integral.integration_timespan; //microseconds
-	report.time_since_last_sonar_update = _frame_integral.sonar_timestamp;//microseconds
-	report.gyro_temperature = _frame_integral.gyro_temperature;//Temperature * 100 in centi-degrees Celsius
-	report.sensor_id = 0;
+	//report.time_since_last_sonar_update = _frame_integral.sonar_timestamp;//microseconds
 	report.max_flow_rate = _sensor_max_flow_rate;
 	report.min_ground_distance = _sensor_min_range;
 	report.max_ground_distance = _sensor_max_range;
@@ -320,7 +268,7 @@ PX4FLOW::collect()
 		distance_report.timestamp = report.timestamp;
 		distance_report.min_distance = PX4FLOW_MIN_DISTANCE;
 		distance_report.max_distance = PX4FLOW_MAX_DISTANCE;
-		distance_report.current_distance = report.ground_distance_m;
+		distance_report.current_distance = static_cast<float>(_frame_integral.ground_distance) / 1000.f; // convert to meters
 		distance_report.variance = 0.0f;
 		distance_report.signal_quality = -1;
 		distance_report.type = distance_sensor_s::MAV_DISTANCE_SENSOR_ULTRASOUND;
@@ -335,8 +283,7 @@ PX4FLOW::collect()
 	return PX4_OK;
 }
 
-void
-PX4FLOW::start()
+void PX4FLOW::start()
 {
 	/* reset the report ring and state machine */
 	_collect_phase = false;
@@ -345,8 +292,7 @@ PX4FLOW::start()
 	ScheduleNow();
 }
 
-void
-PX4FLOW::RunImpl()
+void PX4FLOW::RunImpl()
 {
 	if (OK != measure()) {
 		DEVICE_DEBUG("measure error");
@@ -363,16 +309,14 @@ PX4FLOW::RunImpl()
 	ScheduleDelayed(PX4FLOW_CONVERSION_INTERVAL_DEFAULT);
 }
 
-void
-PX4FLOW::print_status()
+void PX4FLOW::print_status()
 {
 	I2CSPIDriverBase::print_status();
 	perf_print_counter(_sample_perf);
 	perf_print_counter(_comms_errors);
 }
 
-void
-PX4FLOW::print_usage()
+void PX4FLOW::print_usage()
 {
 	PRINT_MODULE_USAGE_NAME("px4flow", "driver");
 	PRINT_MODULE_USAGE_COMMAND("start");
@@ -385,8 +329,8 @@ PX4FLOW::print_usage()
 I2CSPIDriverBase *PX4FLOW::instantiate(const BusCLIArguments &cli, const BusInstanceIterator &iterator,
 				       int runtime_instance)
 {
-	PX4FLOW *instance = new PX4FLOW(iterator.configuredBusOption(), iterator.bus(), cli.i2c_address, cli.orientation,
-					cli.bus_frequency);
+	PX4FLOW *instance = new PX4FLOW(iterator.configuredBusOption(), iterator.bus(), cli.bus_frequency, cli.i2c_address,
+					cli.orientation);
 
 	if (!instance) {
 		PX4_ERR("alloc failed");
@@ -401,8 +345,7 @@ I2CSPIDriverBase *PX4FLOW::instantiate(const BusCLIArguments &cli, const BusInst
 	return instance;
 }
 
-int
-px4flow_main(int argc, char *argv[])
+extern "C" __EXPORT int px4flow_main(int argc, char *argv[])
 {
 	int ch;
 	using ThisDriver = PX4FLOW;
@@ -430,13 +373,11 @@ px4flow_main(int argc, char *argv[])
 
 	if (!strcmp(verb, "start")) {
 		return ThisDriver::module_start(cli, iterator);
-	}
 
-	if (!strcmp(verb, "stop")) {
+	} else if (!strcmp(verb, "stop")) {
 		return ThisDriver::module_stop(iterator);
-	}
 
-	if (!strcmp(verb, "status")) {
+	} else if (!strcmp(verb, "status")) {
 		return ThisDriver::module_status(iterator);
 	}
 

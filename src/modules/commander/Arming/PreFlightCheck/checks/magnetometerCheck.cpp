@@ -41,6 +41,7 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/sensor_mag.h>
 
+using calibration::ParamPrefix;
 using namespace time_literals;
 
 bool PreFlightCheck::magnetometerCheck(orb_advert_t *mavlink_log_pub, vehicle_status_s &status, const uint8_t instance,
@@ -64,7 +65,7 @@ bool PreFlightCheck::magnetometerCheck(orb_advert_t *mavlink_log_pub, vehicle_st
 
 		device_id = magnetometer.get().device_id;
 
-		calibration_valid = (calibration::FindCalibrationIndex("MAG", device_id) >= 0);
+		calibration_valid = (calibration::FindConfigurationIndex(ParamPrefix::CAL, "MAG", device_id) >= 0);
 
 		if (!calibration_valid) {
 			if (report_fail) {

@@ -642,20 +642,19 @@ MavlinkReceiver::handle_message_optical_flow_rad(mavlink_message_t *msg)
 	mavlink_optical_flow_rad_t flow;
 	mavlink_msg_optical_flow_rad_decode(msg, &flow);
 
-	optical_flow_s f{};
+	sensor_optical_flow_integrated_s f{};
 
 	f.timestamp = hrt_absolute_time();
-	f.time_since_last_sonar_update = flow.time_delta_distance_us;
+	//f.time_since_last_sonar_update = flow.time_delta_distance_us;
 	f.integration_timespan  = flow.integration_time_us;
 	f.pixel_flow_x_integral = flow.integrated_x;
 	f.pixel_flow_y_integral = flow.integrated_y;
 	f.gyro_x_rate_integral  = flow.integrated_xgyro;
 	f.gyro_y_rate_integral  = flow.integrated_ygyro;
 	f.gyro_z_rate_integral  = flow.integrated_zgyro;
-	f.gyro_temperature      = flow.temperature;
-	f.ground_distance_m     = flow.distance;
+	//f.gyro_temperature      = flow.temperature;
 	f.quality               = flow.quality;
-	f.sensor_id             = flow.sensor_id;
+	//f.sensor_id             = flow.sensor_id;
 	f.max_flow_rate         = _param_sens_flow_maxr.get();
 	f.min_ground_distance   = _param_sens_flow_minhgt.get();
 	f.max_ground_distance   = _param_sens_flow_maxhgt.get();
@@ -700,7 +699,7 @@ MavlinkReceiver::handle_message_hil_optical_flow(mavlink_message_t *msg)
 	mavlink_hil_optical_flow_t flow;
 	mavlink_msg_hil_optical_flow_decode(msg, &flow);
 
-	optical_flow_s f{};
+	sensor_optical_flow_integrated_s f{};
 
 	f.timestamp = hrt_absolute_time(); // XXX we rely on the system time for now and not flow.time_usec;
 	f.integration_timespan = flow.integration_time_us;
@@ -709,11 +708,9 @@ MavlinkReceiver::handle_message_hil_optical_flow(mavlink_message_t *msg)
 	f.gyro_x_rate_integral = flow.integrated_xgyro;
 	f.gyro_y_rate_integral = flow.integrated_ygyro;
 	f.gyro_z_rate_integral = flow.integrated_zgyro;
-	f.time_since_last_sonar_update = flow.time_delta_distance_us;
-	f.ground_distance_m = flow.distance;
+	//f.time_since_last_sonar_update = flow.time_delta_distance_us;
 	f.quality = flow.quality;
-	f.sensor_id = flow.sensor_id;
-	f.gyro_temperature = flow.temperature;
+	//f.sensor_id = flow.sensor_id;
 
 	_flow_pub.publish(f);
 

@@ -454,7 +454,7 @@ void EKF2::Run()
 		vehicle_odometry_s ev_odom;
 		const bool new_ev_odom = UpdateExtVisionSample(ekf2_timestamps, ev_odom);
 
-		optical_flow_s optical_flow;
+		vehicle_optical_flow_s optical_flow;
 		const bool new_optical_flow = UpdateFlowSample(ekf2_timestamps, optical_flow);
 
 
@@ -1214,7 +1214,7 @@ void EKF2::PublishWindEstimate(const hrt_abstime &timestamp)
 	}
 }
 
-void EKF2::PublishOpticalFlowVel(const hrt_abstime &timestamp, const optical_flow_s &flow_sample)
+void EKF2::PublishOpticalFlowVel(const hrt_abstime &timestamp, const vehicle_optical_flow_s &flow_sample)
 {
 	estimator_optical_flow_vel_s flow_vel{};
 	flow_vel.timestamp_sample = flow_sample.timestamp;
@@ -1423,7 +1423,7 @@ bool EKF2::UpdateExtVisionSample(ekf2_timestamps_s &ekf2_timestamps, vehicle_odo
 	return new_ev_odom;
 }
 
-bool EKF2::UpdateFlowSample(ekf2_timestamps_s &ekf2_timestamps, optical_flow_s &optical_flow)
+bool EKF2::UpdateFlowSample(ekf2_timestamps_s &ekf2_timestamps, vehicle_optical_flow_s &optical_flow)
 {
 	bool new_optical_flow = false;
 	const unsigned last_generation = _optical_flow_sub.get_last_generation();

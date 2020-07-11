@@ -51,7 +51,7 @@
 #include <lib/parameters/param.h>
 #include <drivers/drv_hrt.h>
 #include <uORB/PublicationMulti.hpp>
-#include <uORB/topics/optical_flow.h>
+#include <uORB/topics/sensor_optical_flow.h>
 
 using namespace time_literals;
 using namespace PixArt_PAW3902JF;
@@ -79,7 +79,7 @@ public:
 private:
 	int probe() override;
 
-	uint8_t	RegisterRead(uint8_t reg, int retries = 3);
+	uint8_t RegisterRead(uint8_t reg, int retries = 3);
 	void RegisterWrite(uint8_t reg, uint8_t data);
 	bool RegisterWriteVerified(uint8_t reg, uint8_t data, int retries = 5);
 
@@ -91,7 +91,9 @@ private:
 
 	bool ChangeMode(Mode newMode);
 
-	uORB::PublicationMulti<optical_flow_s> _optical_flow_pub{ORB_ID(optical_flow)};
+	uORB::PublicationMulti<sensor_optical_flow_s> _optical_flow_pub{ORB_ID(sensor_optical_flow)};
+
+	matrix::Dcmf _rotation{};
 
 	perf_counter_t	_sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};
 	perf_counter_t	_interval_perf{perf_alloc(PC_INTERVAL, MODULE_NAME": interval")};
@@ -100,14 +102,9 @@ private:
 	perf_counter_t	_mode_change_perf{perf_alloc(PC_COUNT, MODULE_NAME": mode change")};
 	perf_counter_t	_register_write_fail_perf{perf_alloc(PC_COUNT, MODULE_NAME": verified register write failed")};
 
-	static constexpr uint64_t COLLECT_TIME{15000}; // 15 milliseconds, optical flow data publish rate
-
 	uint64_t _previous_collect_timestamp{0};
-	uint64_t _flow_dt_sum_usec{0};
 	uint8_t _flow_sample_counter{0};
 	uint16_t _flow_quality_sum{0};
-
-	matrix::Dcmf	_rotation;
 
 	int		_flow_sum_x{0};
 	int		_flow_sum_y{0};

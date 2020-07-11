@@ -1,6 +1,6 @@
 ############################################################################
 #
-#   Copyright (c) 2015-2019 PX4 Development Team. All rights reserved.
+#   Copyright (c) 2020 PX4 Development Team. All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
 # modification, are permitted provided that the following conditions
@@ -31,37 +31,9 @@
 #
 ############################################################################
 
-add_subdirectory(data_validator)
-add_subdirectory(integrator)
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR})
-add_subdirectory(vehicle_acceleration)
-add_subdirectory(vehicle_angular_velocity)
-add_subdirectory(vehicle_air_data)
-add_subdirectory(vehicle_gps_position)
-add_subdirectory(vehicle_imu)
-add_subdirectory(vehicle_magnetometer)
-add_subdirectory(vehicle_optical_flow)
-
-px4_add_module(
-	MODULE modules__sensors
-	MAIN sensors
-	SRCS
-		voted_sensors_update.cpp
-		sensors.cpp
-	DEPENDS
-		airspeed
-		conversion
-		data_validator
-		drivers__device
-		git_ecl
-		mathlib
-		sensor_calibration
-		vehicle_acceleration
-		vehicle_angular_velocity
-		vehicle_air_data
-		vehicle_gps_position
-		vehicle_imu
-		vehicle_magnetometer
-		vehicle_optical_flow
-	)
+px4_add_library(sensors_integrator
+	Integrator.cpp
+	Integrator.hpp
+)
+target_compile_options(sensors_integrator PRIVATE ${MAX_CUSTOM_OPT_LEVEL})
+target_link_libraries(sensors_integrator PRIVATE mathlib)

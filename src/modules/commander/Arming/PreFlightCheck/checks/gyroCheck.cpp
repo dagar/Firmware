@@ -41,6 +41,7 @@
 #include <uORB/Subscription.hpp>
 #include <uORB/topics/sensor_gyro.h>
 
+using calibration::ParamPrefix;
 using namespace time_literals;
 
 bool PreFlightCheck::gyroCheck(orb_advert_t *mavlink_log_pub, vehicle_status_s &status, const uint8_t instance,
@@ -64,7 +65,7 @@ bool PreFlightCheck::gyroCheck(orb_advert_t *mavlink_log_pub, vehicle_status_s &
 
 		device_id = gyro.get().device_id;
 
-		calibration_valid = (calibration::FindCalibrationIndex("GYRO", device_id) >= 0);
+		calibration_valid = (calibration::FindConfigurationIndex(ParamPrefix::CAL, "GYRO", device_id) >= 0);
 
 		if (!calibration_valid) {
 			if (report_fail) {

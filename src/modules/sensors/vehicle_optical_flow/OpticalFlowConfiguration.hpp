@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2019 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2020 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,34 +33,59 @@
 
 #pragma once
 
-#include "sensor_bridge.hpp"
+#include <lib/conversion/rotation.h>
+#include <lib/matrix/matrix/math.hpp>
+#include <px4_platform_common/px4_config.h>
+#include <px4_platform_common/log.h>
+#include <uORB/Subscription.hpp>
 
-#include <stdint.h>
-
-#include <uORB/topics/sensor_optical_flow_integrated.h>
-
-#include <com/hex/equipment/flow/Measurement.hpp>
-
-class UavcanFlowBridge : public UavcanSensorBridgeBase
+namespace sensors
+{
+class OpticalFlowConfiguration
 {
 public:
-	static const char *const NAME;
+	static constexpr int MAX_SENSOR_COUNT = 4;
 
-	UavcanFlowBridge(uavcan::INode &node);
+	static constexpr uint8_t DEFAULT_PRIORITY = 50;
 
-	const char *get_name() const override { return NAME; }
+	static constexpr const char *SensorString() { return "FLOW"; }
 
-	int init() override;
+	OpticalFlowConfiguration();
+	explicit OpticalFlowConfiguration(uint32_t device_id);
+
+	~OpticalFlowConfiguration() = default;
+
+	void PrintStatus();
+
+	void set_configuration_index(uint8_t index) { _configuration_index = index; }
+	void set_device_id(uint32_t device_id);
+
+	uint32_t device_id() const { return _device_id; }
+	bool enabled() const { return (_priority > 0); }
+	const matrix::Vector3f &position() const { return _position; }
+	const int32_t &priority() const { return _priority; }
+	const matrix::Dcmf &rotation() const { return _rotation; }
+	const Rotation &rotation_enum() const { return _rotation_enum; }
+
+	// rotate corrected measurements from sensor to body frame
+	inline matrix::Vector3f Correct(const matrix::Vector3f &data) const
+	{
+		return _rotation * matrix::Vector3f{data};
+	}
+
+	bool ParametersSave();
+	void ParametersUpdate();
+
+	void Reset();
 
 private:
+	Rotation _rotation_enum{ROTATION_NONE};
 
-	void flow_sub_cb(const uavcan::ReceivedDataStructure<com::hex::equipment::flow::Measurement> &msg);
+	matrix::Dcmf _rotation;
+	matrix::Vector3f _position;
 
-	typedef uavcan::MethodBinder < UavcanFlowBridge *,
-		void (UavcanFlowBridge::*)
-		(const uavcan::ReceivedDataStructure<com::hex::equipment::flow::Measurement> &) >
-		FlowCbBinder;
-
-	uavcan::Subscriber<com::hex::equipment::flow::Measurement, FlowCbBinder> _sub_flow;
-
+	int8_t _configuration_index{-1};
+	uint32_t _device_id{0};
+	int32_t _priority{-1};
 };
+} // namespace sensors

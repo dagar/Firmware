@@ -45,10 +45,9 @@
 #include <drivers/device/spi.h>
 #include <conversion/rotation.h>
 #include <lib/perf/perf_counter.h>
-#include <lib/parameters/param.h>
 #include <drivers/drv_hrt.h>
 #include <uORB/PublicationMulti.hpp>
-#include <uORB/topics/optical_flow.h>
+#include <uORB/topics/sensor_optical_flow.h>
 #include <px4_platform_common/i2c_spi_buses.h>
 
 /* Configuration Constants */
@@ -80,27 +79,15 @@ public:
 
 	void RunImpl();
 
-protected:
-	virtual int probe();
-
 private:
+	int probe() override;
 
-	const uint64_t _collect_time{15000}; // usecs, ensures flow data is published every second iteration of Run() (100Hz -> 50Hz)
+	uORB::PublicationMulti<sensor_optical_flow_s> _optical_flow_pub{ORB_ID(sensor_optical_flow)};
 
-	uORB::PublicationMulti<optical_flow_s> _optical_flow_pub{ORB_ID(optical_flow)};
-
-	perf_counter_t _sample_perf;
-	perf_counter_t _comms_errors;
-
-	uint64_t _previous_collect_timestamp{0};
+	perf_counter_t _sample_perf{perf_alloc(PC_ELAPSED, MODULE_NAME": read")};
+	perf_counter_t _comms_errors{perf_alloc(PC_COUNT, MODULE_NAME": com err")};
 
 	enum Rotation _yaw_rotation;
-
-	int _flow_sum_x{0};
-	int _flow_sum_y{0};
-	uint64_t _flow_dt_sum_usec{0};
-	uint16_t _flow_quality_sum{0};
-	uint8_t _flow_sample_counter{0};
 
 	/**
 	* Initialise the automatic measurement state machine and start it.
@@ -114,7 +101,6 @@ private:
 	* Stop the automatic measurement state machine.
 	*/
 	void stop();
-
 
 	int readRegister(unsigned reg, uint8_t *data, unsigned count);
 	int writeRegister(unsigned reg, uint8_t data);

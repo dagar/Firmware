@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2019-2020 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2019-2021 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -42,19 +42,7 @@ PAW3902::PAW3902(I2CSPIBusOption bus_option, int bus, int devid, int bus_frequen
 		PX4_INFO("using yaw rotation %.3f degrees (%.3f radians)",
 			 (double)yaw_rotation_degrees, (double)math::radians(yaw_rotation_degrees));
 
-		_rotation = matrix::Dcmf{matrix::Eulerf{0.f, 0.f, math::radians(yaw_rotation_degrees)}};
-
-	} else {
-		// otherwise use the parameter SENS_FLOW_ROT
-		param_t rot = param_find("SENS_FLOW_ROT");
-		int32_t val = 0;
-
-		if (param_get(rot, &val) == PX4_OK) {
-			_rotation = get_rot_matrix((enum Rotation)val);
-
-		} else {
-			_rotation.identity();
-		}
+		//_rotation = matrix::Dcmf{matrix::Eulerf{0.f, 0.f, math::radians(yaw_rotation_degrees)}};
 	}
 }
 
@@ -608,11 +596,8 @@ void PAW3902::RunImpl()
 
 	perf_end(_sample_perf);
 
-	const uint64_t dt_flow = timestamp_sample - _previous_collect_timestamp;
-
 	// update for next iteration
 	_previous_collect_timestamp = timestamp_sample;
-
 
 	// check SQUAL & Shutter values
 	// To suppress false motion reports, discard Delta X and Delta Y values if the SQUAL and Shutter values meet the condition
@@ -627,7 +612,6 @@ void PAW3902::RunImpl()
 		perf_end(_sample_perf);
 
 		// reset
-		_flow_dt_sum_usec = 0;
 		_flow_sum_x = 0;
 		_flow_sum_y = 0;
 		_flow_sample_counter = 0;
@@ -695,7 +679,6 @@ void PAW3902::RunImpl()
 	}
 
 	if (buf.data.SQUAL > 0) {
-		_flow_dt_sum_usec += dt_flow;
 		_flow_sum_x += delta_x_raw;
 		_flow_sum_y += delta_y_raw;
 		_flow_sample_counter++;
@@ -703,7 +686,6 @@ void PAW3902::RunImpl()
 
 	} else {
 		// reset
-		_flow_dt_sum_usec = 0;
 		_flow_sum_x = 0;
 		_flow_sum_y = 0;
 		_flow_sample_counter = 0;
@@ -711,32 +693,20 @@ void PAW3902::RunImpl()
 		return;
 	}
 
-	// returns if the collect time has not been reached
-	if (_flow_dt_sum_usec < COLLECT_TIME) {
-		return;
-	}
-
-	optical_flow_s report{};
+	sensor_optical_flow_s report{};
 	report.timestamp = timestamp_sample;
-	//report.device_id = get_device_id();
+	report.device_id = get_device_id();
 
-	float pixel_flow_x_integral = (float)_flow_sum_x / 500.0f;	// proportional factor + convert from pixels to radians
-	float pixel_flow_y_integral = (float)_flow_sum_y / 500.0f;	// proportional factor + convert from pixels to radians
+	float pixel_flow_x = (float)_flow_sum_x / 500.0f;	// proportional factor + convert from pixels to radians
+	float pixel_flow_y = (float)_flow_sum_y / 500.0f;	// proportional factor + convert from pixels to radians
 
 	// rotate measurements in yaw from sensor frame to body frame
-	const matrix::Vector3f pixel_flow_rotated = _rotation * matrix::Vector3f{pixel_flow_x_integral, pixel_flow_y_integral, 0.f};
-	report.pixel_flow_x_integral = pixel_flow_rotated(0);
-	report.pixel_flow_y_integral = pixel_flow_rotated(1);
-
-	report.frame_count_since_last_readout = _flow_sample_counter; // number of frames
-	report.integration_timespan = _flow_dt_sum_usec;              // microseconds
+	const matrix::Vector3f pixel_flow_rotated = _rotation * matrix::Vector3f{pixel_flow_x, pixel_flow_y, 0.f};
+	report.pixel_flow_x = pixel_flow_rotated(0);
+	report.pixel_flow_y = pixel_flow_rotated(1);
+	//report.pixel_flow_z = pixel_flow_rotated(2);
 
 	report.quality = _flow_sample_counter > 0 ? _flow_quality_sum / _flow_sample_counter : 0;
-
-	// No gyro on this board
-	report.gyro_x_rate_integral = NAN;
-	report.gyro_y_rate_integral = NAN;
-	report.gyro_z_rate_integral = NAN;
 
 	// set (conservative) specs according to datasheet
 	report.max_flow_rate = 7.4f;        // Datasheet: 7.4 rad/s
@@ -747,7 +717,6 @@ void PAW3902::RunImpl()
 	_optical_flow_pub.publish(report);
 
 	// reset
-	_flow_dt_sum_usec = 0;
 	_flow_sum_x = 0;
 	_flow_sum_y = 0;
 	_flow_sample_counter = 0;

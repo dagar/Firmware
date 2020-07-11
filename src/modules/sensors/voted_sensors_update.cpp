@@ -44,6 +44,7 @@
 #include <lib/systemlib/mavlink_log.h>
 #include <uORB/Subscription.hpp>
 
+using calibration::ParamPrefix;
 using namespace sensors;
 using namespace matrix;
 using namespace time_literals;
@@ -90,13 +91,15 @@ void VotedSensorsUpdate::parametersUpdate()
 		if (imu.get().timestamp > 0 && imu.get().accel_device_id > 0 && imu.get().gyro_device_id > 0) {
 
 			// find corresponding configured accel priority
-			int8_t accel_cal_index = calibration::FindCalibrationIndex("ACC", imu.get().accel_device_id);
+			int8_t accel_cal_index = calibration::FindConfigurationIndex(ParamPrefix::CAL, "ACC",
+						 imu.get().accel_device_id);
 
 			if (accel_cal_index >= 0) {
 				// found matching CAL_ACCx_PRIO
 				int32_t accel_priority_old = _accel.priority_configured[uorb_index];
 
-				_accel.priority_configured[uorb_index] = calibration::GetCalibrationParam("ACC", "PRIO", accel_cal_index);
+				_accel.priority_configured[uorb_index] = calibration::GetConfigurationParam(ParamPrefix::CAL, "ACC",
+						"PRIO", accel_cal_index);
 
 				if (accel_priority_old != _accel.priority_configured[uorb_index]) {
 					if (_accel.priority_configured[uorb_index] == 0) {
@@ -112,13 +115,15 @@ void VotedSensorsUpdate::parametersUpdate()
 			}
 
 			// find corresponding configured gyro priority
-			int8_t gyro_cal_index = calibration::FindCalibrationIndex("GYRO", imu.get().gyro_device_id);
+			int8_t gyro_cal_index = calibration::FindConfigurationIndex(ParamPrefix::CAL, "GYRO",
+						imu.get().gyro_device_id);
 
 			if (gyro_cal_index >= 0) {
 				// found matching CAL_GYROx_PRIO
 				int32_t gyro_priority_old = _gyro.priority_configured[uorb_index];
 
-				_gyro.priority_configured[uorb_index] = calibration::GetCalibrationParam("GYRO", "PRIO", gyro_cal_index);
+				_gyro.priority_configured[uorb_index] = calibration::GetConfigurationParam(ParamPrefix::CAL, "GYRO",
+									"PRIO", gyro_cal_index);
 
 				if (gyro_priority_old != _gyro.priority_configured[uorb_index]) {
 					if (_gyro.priority_configured[uorb_index] == 0) {

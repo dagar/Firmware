@@ -31,6 +31,8 @@
  *
  ****************************************************************************/
 
+#include "Utilities.hpp"
+
 #include <px4_platform_common/px4_config.h>
 #include <px4_platform_common/log.h>
 #include <lib/conversion/rotation.h>
@@ -45,7 +47,7 @@ using matrix::Vector3f;
 namespace calibration
 {
 
-int8_t FindCalibrationIndex(const char *sensor_type, uint32_t device_id)
+int8_t FindConfigurationIndex(const ParamPrefix prefix, const char *sensor_type, uint32_t device_id)
 {
 	if (device_id == 0) {
 		return -1;
@@ -53,7 +55,13 @@ int8_t FindCalibrationIndex(const char *sensor_type, uint32_t device_id)
 
 	for (unsigned i = 0; i < 4; ++i) {
 		char str[20] {};
-		sprintf(str, "CAL_%s%u_ID", sensor_type, i);
+
+		if (prefix == ParamPrefix::CAL) {
+			sprintf(str, "CAL_%s%u_ID", sensor_type, i);
+
+		} else {
+			sprintf(str, "SENS_%s%u_ID", sensor_type, i);
+		}
 
 		int32_t device_id_val = 0;
 
@@ -76,11 +84,17 @@ int8_t FindCalibrationIndex(const char *sensor_type, uint32_t device_id)
 	return -1;
 }
 
-int32_t GetCalibrationParam(const char *sensor_type, const char *cal_type, uint8_t instance)
+int32_t GetConfigurationParam(const ParamPrefix prefix, const char *sensor_type, const char *cal_type, uint8_t instance)
 {
 	// eg CAL_MAGn_ID/CAL_MAGn_ROT
 	char str[20] {};
-	sprintf(str, "CAL_%s%u_%s", sensor_type, instance, cal_type);
+
+	if (prefix == ParamPrefix::CAL) {
+		sprintf(str, "CAL_%s%u_%s", sensor_type, instance, cal_type);
+
+	} else {
+		sprintf(str, "SENS_%s%u_%s", sensor_type, instance, cal_type);
+	}
 
 	int32_t value = 0;
 
@@ -91,12 +105,18 @@ int32_t GetCalibrationParam(const char *sensor_type, const char *cal_type, uint8
 	return value;
 }
 
-bool SetCalibrationParam(const char *sensor_type, const char *cal_type, uint8_t instance, int32_t value)
+bool SetConfigurationParam(const ParamPrefix prefix, const char *sensor_type, const char *cal_type, uint8_t instance,
+			   int32_t value)
 {
 	char str[20] {};
 
 	// eg CAL_MAGn_ID/CAL_MAGn_ROT
-	sprintf(str, "CAL_%s%u_%s", sensor_type, instance, cal_type);
+	if (prefix == ParamPrefix::CAL) {
+		sprintf(str, "CAL_%s%u_%s", sensor_type, instance, cal_type);
+
+	} else {
+		sprintf(str, "SENS_%s%u_%s", sensor_type, instance, cal_type);
+	}
 
 	int ret = param_set_no_notification(param_find(str), &value);
 
@@ -107,7 +127,8 @@ bool SetCalibrationParam(const char *sensor_type, const char *cal_type, uint8_t 
 	return ret == PX4_OK;
 }
 
-Vector3f GetCalibrationParamsVector3f(const char *sensor_type, const char *cal_type, uint8_t instance)
+Vector3f GetConfigurationParamsVector3f(const ParamPrefix prefix, const char *sensor_type, const char *cal_type,
+					uint8_t instance)
 {
 	Vector3f values{0.f, 0.f, 0.f};
 
@@ -116,8 +137,14 @@ Vector3f GetCalibrationParamsVector3f(const char *sensor_type, const char *cal_t
 	for (int axis = 0; axis < 3; axis++) {
 		char axis_char = 'X' + axis;
 
-		// eg CAL_MAGn_{X,Y,Z}OFF
-		sprintf(str, "CAL_%s%u_%c%s", sensor_type, instance, axis_char, cal_type);
+		if (prefix == ParamPrefix::CAL) {
+			// eg CAL_MAGn_{X,Y,Z}OFF
+			sprintf(str, "CAL_%s%u_%c%s", sensor_type, instance, axis_char, cal_type);
+
+		} else {
+			// SENS_FLOXn_POS_{X,Y,Z}
+			sprintf(str, "SENS_%s%u_%s_%c", sensor_type, instance, cal_type, axis_char);
+		}
 
 		if (param_get(param_find(str), &values(axis)) != 0) {
 			PX4_ERR("failed to get %s", str);
@@ -127,7 +154,8 @@ Vector3f GetCalibrationParamsVector3f(const char *sensor_type, const char *cal_t
 	return values;
 }
 
-bool SetCalibrationParamsVector3f(const char *sensor_type, const char *cal_type, uint8_t instance, Vector3f values)
+bool SetConfigurationParamsVector3f(const ParamPrefix prefix, const char *sensor_type, const char *cal_type,
+				    uint8_t instance, Vector3f values)
 {
 	int ret = PX4_OK;
 	char str[20] {};
@@ -135,8 +163,14 @@ bool SetCalibrationParamsVector3f(const char *sensor_type, const char *cal_type,
 	for (int axis = 0; axis < 3; axis++) {
 		char axis_char = 'X' + axis;
 
-		// eg CAL_MAGn_{X,Y,Z}OFF
-		sprintf(str, "CAL_%s%u_%c%s", sensor_type, instance, axis_char, cal_type);
+		if (prefix == ParamPrefix::CAL) {
+			// eg CAL_MAGn_{X,Y,Z}OFF
+			sprintf(str, "CAL_%s%u_%c%s", sensor_type, instance, axis_char, cal_type);
+
+		} else {
+			// SENS_FLOXn_POS_{X,Y,Z}
+			sprintf(str, "SENS_%s%u_%s_%c", sensor_type, instance, cal_type, axis_char);
+		}
 
 		if (param_set_no_notification(param_find(str), &values(axis)) != 0) {
 			PX4_ERR("failed to set %s = %.4f", str, (double)values(axis));
