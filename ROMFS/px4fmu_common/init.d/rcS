@@ -393,6 +393,8 @@ else
 		commander start
 	fi
 
+	output_predictor start
+
 	# Sensors on the PWM interface bank.
 	if param compare -s SENS_EN_LL40LS 1
 	then
