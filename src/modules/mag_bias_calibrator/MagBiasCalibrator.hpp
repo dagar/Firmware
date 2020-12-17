@@ -49,6 +49,7 @@
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_mag.h>
 #include <uORB/topics/vehicle_angular_velocity.h>
+#include <uORB/topics/vehicle_status.h>
 
 namespace mag_bias_calibrator
 {
@@ -84,6 +85,7 @@ private:
 	uORB::SubscriptionMultiArray<sensor_mag_s, MAX_SENSOR_COUNT> _sensor_mag_subs{ORB_ID::sensor_mag};
 	uORB::Subscription _parameter_update_sub{ORB_ID(parameter_update)};
 	uORB::Subscription _vehicle_angular_velocity_sub{ORB_ID(vehicle_angular_velocity)};
+	uORB::Subscription _vehicle_status_sub{ORB_ID(vehicle_status)};
 
 	calibration::Magnetometer _calibration[MAX_SENSOR_COUNT];
 

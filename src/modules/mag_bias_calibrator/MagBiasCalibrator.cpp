@@ -98,6 +98,14 @@ void MagBiasCalibrator::Run()
 		}
 	}
 
+	if (_vehicle_status_sub.updated()) {
+		vehicle_status_s vehicle_status;
+
+		if (_vehicle_status_sub.copy(&vehicle_status)) {
+			_armed = vehicle_status.arming_state == vehicle_status_s::ARMING_STATE_ARMED;
+		}
+	}
+
 	perf_begin(_cycle_perf);
 
 	bool calibration_updated = false;
@@ -111,6 +119,7 @@ void MagBiasCalibrator::Run()
 		while (_sensor_mag_subs[mag_index].update(&sensor_mag)) {
 
 			{
+				// TODO: time synchronize
 				// grab latest angular velocity
 				vehicle_angular_velocity_s vehicle_angular_velocity;
 
@@ -134,6 +143,7 @@ void MagBiasCalibrator::Run()
 			const bool longer_than_10_sec = (sensor_mag.timestamp_sample - _timestamp_last_save[mag_index]) > 10_s;
 			const bool bias_significant = bias.norm_squared() > (0.01f * 0.01f);
 
+			// TODO: require sufficient movement? check validity? range? quality?
 			if (!_armed && bias_significant && longer_than_10_sec) {
 				const Vector3f new_offset = _calibration[mag_index].BiasCorrectedSensorOffset(bias);
 
