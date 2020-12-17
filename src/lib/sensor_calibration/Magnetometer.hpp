@@ -85,6 +85,12 @@ public:
 		return _rotation * (_scale * ((data + _power * _power_compensation) - _offset));
 	}
 
+	// Compute sensor offset from bias (board frame)
+	matrix::Vector3f BiasCorrectedSensorOffset(const matrix::Vector3f &bias) const
+	{
+		return _rotation.I() * _scale.I() * bias + _offset;
+	}
+
 	bool ParametersSave();
 	void ParametersUpdate();
 
