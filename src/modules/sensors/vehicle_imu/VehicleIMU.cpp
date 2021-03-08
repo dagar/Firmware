@@ -210,7 +210,6 @@ void VehicleIMU::Run()
 
 	bool sensor_data_gap = false;
 	bool update_integrator_config = false;
-	bool publish_status = false;
 
 	// integrate queued gyro
 	sensor_gyro_s gyro;
@@ -228,7 +227,7 @@ void VehicleIMU::Run()
 			// collect sample interval average for filters
 			if (!_intervals_configured && UpdateIntervalAverage(_gyro_interval, gyro.timestamp_sample, gyro.samples)) {
 				update_integrator_config = true;
-				publish_status = true;
+				_publish_status = true;
 				_status.gyro_rate_hz = 1e6f / _gyro_interval.update_interval;
 				_status.gyro_raw_rate_hz = 1e6f / _gyro_interval.update_interval_raw;
 			}
@@ -239,7 +238,7 @@ void VehicleIMU::Run()
 		_gyro_calibration.set_device_id(gyro.device_id);
 
 		if (gyro.error_count != _status.gyro_error_count) {
-			publish_status = true;
+			_publish_status = true;
 			_status.gyro_error_count = gyro.error_count;
 		}
 
@@ -277,7 +276,7 @@ void VehicleIMU::Run()
 			// collect sample interval average for filters
 			if (!_intervals_configured && UpdateIntervalAverage(_accel_interval, accel.timestamp_sample, accel.samples)) {
 				update_integrator_config = true;
-				publish_status = true;
+				_publish_status = true;
 				_status.accel_rate_hz = 1e6f / _accel_interval.update_interval;
 				_status.accel_raw_rate_hz = 1e6f / _accel_interval.update_interval_raw;
 			}
@@ -288,7 +287,7 @@ void VehicleIMU::Run()
 		_accel_calibration.set_device_id(accel.device_id);
 
 		if (accel.error_count != _status.accel_error_count) {
-			publish_status = true;
+			_publish_status = true;
 			_status.accel_error_count = accel.error_count;
 		}
 
@@ -329,7 +328,7 @@ void VehicleIMU::Run()
 				_delta_velocity_clipping |= vehicle_imu_s::CLIPPING_Z;
 			}
 
-			publish_status = true;
+			_publish_status = true;
 		}
 
 		// break once caught up to gyro
@@ -357,6 +356,11 @@ void VehicleIMU::Run()
 		UpdateIntegratorConfiguration();
 	}
 
+	Publish();
+}
+
+void VehicleIMU::Publish()
+{
 	// publish if both accel & gyro integrators are ready
 	if (_accel_integrator.integral_ready() && _gyro_integrator.integral_ready()) {
 
@@ -385,7 +389,7 @@ void VehicleIMU::Run()
 
 				// vehicle_imu_status
 				//  publish before vehicle_imu so that error counts are available synchronously if needed
-				if (publish_status || (hrt_elapsed_time(&_status.timestamp) >= 100_ms)) {
+				if (_publish_status || (hrt_elapsed_time(&_status.timestamp) >= 100_ms)) {
 					_status.accel_device_id = _accel_calibration.device_id();
 					_status.gyro_device_id = _gyro_calibration.device_id();
 
