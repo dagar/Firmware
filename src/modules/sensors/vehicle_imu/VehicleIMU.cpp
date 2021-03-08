@@ -248,8 +248,10 @@ void VehicleIMU::Run()
 		_gyro_temperature += gyro.temperature;
 		_gyro_sum_count++;
 
-		_gyro_integrator.put(gyro.timestamp_sample, gyro_raw);
+		const float dt = math::constrain((gyro.timestamp_sample - _last_timestamp_sample_gyro) * 1e-6f, 0.0001f, 0.1f);
 		_last_timestamp_sample_gyro = gyro.timestamp_sample;
+
+		_gyro_integrator.put(gyro_raw, dt);
 
 		// break if interval is configured and we haven't fallen behind
 		if (_intervals_configured && _gyro_integrator.integral_ready()
@@ -295,8 +297,10 @@ void VehicleIMU::Run()
 		_accel_temperature += accel.temperature;
 		_accel_sum_count++;
 
-		_accel_integrator.put(accel.timestamp_sample, accel_raw);
+		const float dt = math::constrain((accel.timestamp_sample - _last_timestamp_sample_accel) * 1e-6f, 0.0001f, 0.1f);
 		_last_timestamp_sample_accel = accel.timestamp_sample;
+
+		_accel_integrator.put(accel_raw, dt);
 
 		if (accel.clip_counter[0] > 0 || accel.clip_counter[1] > 0 || accel.clip_counter[2] > 0) {
 
