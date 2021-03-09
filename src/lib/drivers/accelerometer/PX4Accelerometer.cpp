@@ -111,6 +111,8 @@ void PX4Accelerometer::updateFIFO(sensor_accel_fifo_s &sample)
 	sample.device_id = _device_id;
 	sample.scale = _scale;
 	sample.rotation = _rotation;
+	sample.temperature = _temperature;
+	sample.error_count = _error_count;
 
 	sample.timestamp = hrt_absolute_time();
 	_sensor_fifo_pub.publish(sample);

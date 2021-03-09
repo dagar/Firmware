@@ -49,7 +49,9 @@
 #include <uORB/SubscriptionCallback.hpp>
 #include <uORB/topics/parameter_update.h>
 #include <uORB/topics/sensor_accel.h>
+#include <uORB/topics/sensor_accel_fifo.h>
 #include <uORB/topics/sensor_gyro.h>
+#include <uORB/topics/sensor_gyro_fifo.h>
 #include <uORB/topics/vehicle_imu.h>
 #include <uORB/topics/vehicle_imu_status.h>
 
@@ -62,7 +64,7 @@ class VehicleIMU : public ModuleParams, public px4::ScheduledWorkItem
 {
 public:
 	VehicleIMU() = delete;
-	VehicleIMU(int instance, uint8_t accel_index, uint8_t gyro_index, const px4::wq_config_t &config);
+	VehicleIMU(int instance, uint32_t accel_device_id, uint32_t gyro_device_id, const px4::wq_config_t &config);
 
 	~VehicleIMU() override;
 
@@ -85,19 +87,23 @@ private:
 	void Publish();
 	void Run() override;
 	void UpdateAccel();
+	void UpdateAccelFifo();
 	void UpdateAccelVibrationMetrics(const matrix::Vector3f &delta_velocity);
 	void UpdateGyro();
+	void UpdateGyroFifo();
 	void UpdateGyroVibrationMetrics(const matrix::Vector3f &delta_angle);
 	bool UpdateIntervalAverage(IntervalAverage &intavg, const hrt_abstime &timestamp_sample, uint8_t samples = 1);
 	void UpdateIntegratorConfiguration();
 
-	uORB::PublicationMulti<vehicle_imu_s> _vehicle_imu_pub{ORB_ID(vehicle_imu)};
+	uORB::PublicationMulti<vehicle_imu_s>        _vehicle_imu_pub{ORB_ID(vehicle_imu)};
 	uORB::PublicationMulti<vehicle_imu_status_s> _vehicle_imu_status_pub{ORB_ID(vehicle_imu_status)};
 
 	uORB::SubscriptionInterval _parameter_update_sub{ORB_ID(parameter_update), 1_s};
 
-	uORB::SubscriptionCallbackWorkItem _sensor_accel_sub;
-	uORB::SubscriptionCallbackWorkItem _sensor_gyro_sub;
+	uORB::SubscriptionCallbackWorkItem _sensor_accel_sub{this, ORB_ID(sensor_accel)};
+	uORB::SubscriptionCallbackWorkItem _sensor_accel_fifo_sub{this, ORB_ID(sensor_accel_fifo)};
+	uORB::SubscriptionCallbackWorkItem _sensor_gyro_sub{this, ORB_ID(sensor_gyro)};
+	uORB::SubscriptionCallbackWorkItem _sensor_gyro_fifo_sub{this, ORB_ID(sensor_gyro_fifo)};
 
 	calibration::Accelerometer _accel_calibration{};
 	calibration::Gyroscope _gyro_calibration{};
@@ -130,6 +136,9 @@ private:
 	vehicle_imu_status_s _status{};
 
 	uint8_t _delta_velocity_clipping{0};
+
+	bool _accel_fifo{false};
+	bool _gyro_fifo{false};
 
 	bool _update_integrator_config{false};
 	bool _sensor_data_gap{false};

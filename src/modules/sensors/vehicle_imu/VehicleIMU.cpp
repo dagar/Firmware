@@ -44,20 +44,63 @@ using math::constrain;
 namespace sensors
 {
 
-VehicleIMU::VehicleIMU(int instance, uint8_t accel_index, uint8_t gyro_index, const px4::wq_config_t &config) :
+VehicleIMU::VehicleIMU(int instance, uint32_t accel_device_id, uint32_t gyro_device_id,
+		       const px4::wq_config_t &config) :
 	ModuleParams(nullptr),
 	ScheduledWorkItem(MODULE_NAME, config),
-	_sensor_accel_sub(this, ORB_ID(sensor_accel), accel_index),
-	_sensor_gyro_sub(this, ORB_ID(sensor_gyro), gyro_index),
 	_instance(instance)
 {
+	for (uint8_t i = 0; i < ORB_MULTI_MAX_INSTANCES; i++) {
+		// accel
+		uORB::SubscriptionData<sensor_accel_s> sensor_accel_sub{ORB_ID(sensor_accel), i};
+
+		if (sensor_accel_sub.get().device_id == accel_device_id) {
+			_sensor_accel_sub.ChangeInstance(i);
+		}
+
+		uORB::SubscriptionData<sensor_accel_fifo_s> sensor_accel_fifo_sub{ORB_ID(sensor_accel_fifo), i};
+
+		if (sensor_accel_fifo_sub.get().device_id == accel_device_id) {
+			_sensor_accel_fifo_sub.ChangeInstance(i);
+			_accel_fifo = true;
+		}
+
+
+		// gyro
+		uORB::SubscriptionData<sensor_gyro_s> sensor_gyro_sub{ORB_ID(sensor_gyro), i};
+
+		if (sensor_gyro_sub.get().device_id == gyro_device_id) {
+			_sensor_gyro_sub.ChangeInstance(i);
+		}
+
+		uORB::SubscriptionData<sensor_accel_fifo_s> sensor_gyro_fifo_sub{ORB_ID(sensor_gyro_fifo), i};
+
+		if (sensor_gyro_fifo_sub.get().device_id == gyro_device_id) {
+			_sensor_gyro_fifo_sub.ChangeInstance(i);
+			_gyro_fifo = true;
+		}
+	}
+
 	const float configured_interval_us = 1e6f / _param_imu_integ_rate.get();
 
 	_accel_integrator.set_reset_interval(configured_interval_us);
-	_accel_integrator.set_reset_samples(sensor_accel_s::ORB_QUEUE_LENGTH);
+
+	if (_accel_fifo) {
+		_accel_integrator.set_reset_samples(sensor_accel_fifo_s::ORB_QUEUE_LENGTH);
+
+	} else {
+		_accel_integrator.set_reset_samples(sensor_accel_s::ORB_QUEUE_LENGTH);
+	}
+
+	if (_gyro_fifo) {
+		_gyro_integrator.set_reset_samples(sensor_gyro_fifo_s::ORB_QUEUE_LENGTH);
+
+	} else {
+		_gyro_integrator.set_reset_samples(sensor_gyro_s::ORB_QUEUE_LENGTH);
+	}
 
 	_gyro_integrator.set_reset_interval(configured_interval_us);
-	_gyro_integrator.set_reset_samples(sensor_gyro_s::ORB_QUEUE_LENGTH);
+
 
 #if defined(ENABLE_LOCKSTEP_SCHEDULER)
 	// currently with lockstep every raw sample needs a corresponding vehicle_imu publication
@@ -92,8 +135,20 @@ bool VehicleIMU::Start()
 	// force initial updates
 	ParametersUpdate(true);
 
-	_sensor_gyro_sub.registerCallback();
-	_sensor_accel_sub.registerCallback();
+	if (_gyro_fifo) {
+		_sensor_gyro_fifo_sub.registerCallback();
+
+	} else {
+		_sensor_gyro_sub.registerCallback();
+	}
+
+	if (_accel_fifo) {
+		_sensor_accel_fifo_sub.registerCallback();
+
+	} else {
+		_sensor_accel_sub.registerCallback();
+	}
+
 	ScheduleNow();
 	return true;
 }
@@ -102,7 +157,9 @@ void VehicleIMU::Stop()
 {
 	// clear all registered callbacks
 	_sensor_accel_sub.unregisterCallback();
+	_sensor_accel_fifo_sub.unregisterCallback();
 	_sensor_gyro_sub.unregisterCallback();
+	_sensor_gyro_fifo_sub.unregisterCallback();
 
 	Deinit();
 }
@@ -207,8 +264,19 @@ void VehicleIMU::Run()
 		return;
 	}
 
-	UpdateGyro();
-	UpdateAccel();
+	if (_gyro_fifo) {
+		UpdateGyroFifo();
+
+	} else {
+		UpdateGyro();
+	}
+
+	if (_accel_fifo) {
+		UpdateAccelFifo();
+
+	} else {
+		UpdateAccel();
+	}
 
 	if (_sensor_data_gap) {
 		_consecutive_data_gap++;
@@ -315,6 +383,82 @@ void VehicleIMU::UpdateAccel()
 	}
 }
 
+void VehicleIMU::UpdateAccelFifo()
+{
+	// update accel, stopping once caught up to the last gyro sample
+	sensor_accel_fifo_s accel_fifo;
+
+	while (_sensor_accel_fifo_sub.update(&accel_fifo)) {
+		perf_count_interval(_accel_update_perf, accel_fifo.timestamp_sample);
+
+		if (_sensor_accel_fifo_sub.get_last_generation() != _accel_last_generation + 1) {
+			_sensor_data_gap = true;
+			perf_count(_accel_generation_gap_perf);
+
+			_accel_interval.timestamp_sample_last = 0; // invalidate any ongoing publication rate averaging
+
+		} else {
+			// collect sample interval average for filters
+			if (!_intervals_configured && UpdateIntervalAverage(_accel_interval, accel_fifo.timestamp_sample, accel_fifo.samples)) {
+				_update_integrator_config = true;
+				_publish_status = true;
+				_status.accel_rate_hz = 1e6f / _accel_interval.update_interval;
+				_status.accel_raw_rate_hz = 1e6f / _accel_interval.update_interval_raw;
+			}
+		}
+
+		_accel_last_generation = _sensor_accel_fifo_sub.get_last_generation();
+
+		_accel_calibration.set_device_id(accel_fifo.device_id);
+
+		if (accel_fifo.error_count != _status.accel_error_count) {
+			_publish_status = true;
+			_status.accel_error_count = accel_fifo.error_count;
+		}
+
+		const int N = accel_fifo.samples;
+		const float dt_s = accel_fifo.dt * 1e-6f;
+		const enum Rotation fifo_rotation = static_cast<enum Rotation>(accel_fifo.rotation);
+
+		_last_timestamp_sample_accel = accel_fifo.timestamp_sample;
+
+		for (int n = 0; n < N; n++) {
+			Vector3f accel_raw{(float)accel_fifo.x[n] *accel_fifo.scale, (float)accel_fifo.y[n] *accel_fifo.scale, (float)accel_fifo.z[n] *accel_fifo.scale};
+			rotate_3f(fifo_rotation, accel_raw(0), accel_raw(1), accel_raw(2));
+
+			_accel_integrator.put(accel_raw, dt_s);
+
+			_accel_sum += accel_raw;
+			_accel_temperature += accel_fifo.temperature;
+			_accel_sum_count++;
+
+			// break once caught up to gyro
+			const float interval_s = _accel_interval.update_interval_raw * 1e-6f;
+
+			if (_accel_integrator.integral_ready() && _gyro_integrator.integral_ready() && _intervals_configured
+			    && (_accel_integrator.integral_dt() >= (_gyro_integrator.integral_dt() - 0.5f * interval_s))) {
+
+				Publish();
+			}
+		}
+
+		// TODO: clipping
+		// // clipping
+		// uint8_t clip_count[3] {
+		// 	clipping(sample.x, _clip_limit, N),
+		// 	clipping(sample.y, _clip_limit, N),
+		// 	clipping(sample.z, _clip_limit, N),
+		// };
+
+		// break once caught up to gyro
+		// if (!_sensor_data_gap && _intervals_configured
+		//     && (_last_timestamp_sample_accel >= (_last_timestamp_sample_gyro - 0.5f * _accel_interval.update_interval))) {
+
+		// 	break;
+		// }
+	}
+}
+
 void VehicleIMU::UpdateGyro()
 {
 	// integrate queued gyro
@@ -361,6 +505,65 @@ void VehicleIMU::UpdateGyro()
 		// break if interval is configured and we haven't fallen behind
 		if (_intervals_configured && _gyro_integrator.integral_ready()
 		    && (hrt_elapsed_time(&gyro.timestamp) < _imu_integration_interval_us) && !_sensor_data_gap) {
+
+			break;
+		}
+	}
+}
+
+void VehicleIMU::UpdateGyroFifo()
+{
+	// integrate queued gyro
+	sensor_gyro_fifo_s gyro_fifo;
+
+	while (_sensor_gyro_fifo_sub.update(&gyro_fifo)) {
+		perf_count_interval(_gyro_update_perf, gyro_fifo.timestamp_sample);
+
+		if (_sensor_gyro_fifo_sub.get_last_generation() != _gyro_last_generation + 1) {
+			_sensor_data_gap = true;
+			perf_count(_gyro_generation_gap_perf);
+
+			_gyro_interval.timestamp_sample_last = 0; // invalidate any ongoing publication rate averaging
+
+		} else {
+			// collect sample interval average for filters
+			if (!_intervals_configured && UpdateIntervalAverage(_gyro_interval, gyro_fifo.timestamp_sample, gyro_fifo.samples)) {
+				_update_integrator_config = true;
+				_publish_status = true;
+				_status.gyro_rate_hz = 1e6f / _gyro_interval.update_interval;
+				_status.gyro_raw_rate_hz = 1e6f / _gyro_interval.update_interval_raw;
+			}
+		}
+
+		_gyro_last_generation = _sensor_gyro_fifo_sub.get_last_generation();
+
+		_gyro_calibration.set_device_id(gyro_fifo.device_id);
+
+		if (gyro_fifo.error_count != _status.gyro_error_count) {
+			_publish_status = true;
+			_status.gyro_error_count = gyro_fifo.error_count;
+		}
+
+		_last_timestamp_sample_gyro = gyro_fifo.timestamp_sample;
+
+		const int N = gyro_fifo.samples;
+		const float dt_s = gyro_fifo.dt * 1e-6f;
+		const enum Rotation fifo_rotation = static_cast<enum Rotation>(gyro_fifo.rotation);
+
+		for (int n = 0; n < N; n++) {
+			Vector3f gyro_raw{(float)gyro_fifo.x[n] *gyro_fifo.scale, (float)gyro_fifo.y[n] *gyro_fifo.scale, (float)gyro_fifo.z[n] *gyro_fifo.scale};
+			rotate_3f(fifo_rotation, gyro_raw(0), gyro_raw(1), gyro_raw(2));
+
+			_gyro_integrator.put(gyro_raw, dt_s);
+
+			_gyro_sum += gyro_raw;
+			_gyro_temperature += gyro_fifo.temperature;
+			_gyro_sum_count++;
+		}
+
+		// break if interval is configured and we haven't fallen behind
+		if (_intervals_configured && _gyro_integrator.integral_ready()
+		    && (hrt_elapsed_time(&gyro_fifo.timestamp) < _imu_integration_interval_us) && !_sensor_data_gap) {
 
 			break;
 		}
@@ -439,8 +642,6 @@ void VehicleIMU::Publish()
 
 			// reset clip counts
 			_delta_velocity_clipping = 0;
-
-			return;
 		}
 	}
 }
@@ -452,8 +653,24 @@ void VehicleIMU::UpdateIntegratorConfiguration()
 		const float configured_interval_us = 1e6f / _param_imu_integ_rate.get();
 
 		// determine number of sensor samples that will get closest to the desired integration interval
-		const uint8_t accel_integral_samples = math::max(1.f, roundf(configured_interval_us / _accel_interval.update_interval));
-		const uint8_t gyro_integral_samples = math::max(1.f, roundf(configured_interval_us / _gyro_interval.update_interval));
+		uint8_t accel_integral_samples = 0;
+
+		if (_accel_fifo) {
+			accel_integral_samples = math::max(1.f, roundf(configured_interval_us / _accel_interval.update_interval_raw));
+
+		} else {
+			accel_integral_samples = math::max(1.f, roundf(configured_interval_us / _accel_interval.update_interval));
+		}
+
+		const uint8_t gyro_publish_samples = math::max(1.f, roundf(configured_interval_us / _gyro_interval.update_interval));
+		uint8_t gyro_integral_samples = 0;
+
+		if (_gyro_fifo) {
+			gyro_integral_samples = math::max(1.f, roundf(configured_interval_us / _gyro_interval.update_interval_raw));
+
+		} else {
+			gyro_integral_samples = math::max(1.f, roundf(configured_interval_us / _gyro_interval.update_interval));
+		}
 
 		// let the gyro set the configuration and scheduling
 		// accel integrator will be forced to reset when gyro integrator is ready
@@ -466,11 +683,19 @@ void VehicleIMU::UpdateIntegratorConfiguration()
 
 		// gyro: find largest integer multiple of gyro_integral_samples
 		for (int n = sensor_gyro_s::ORB_QUEUE_LENGTH; n > 0; n--) {
-			if (gyro_integral_samples % n == 0) {
-				_sensor_gyro_sub.set_required_updates(n);
+			if (gyro_publish_samples % n == 0) {
+				if (_gyro_fifo) {
+					// TODO: review
+					_sensor_gyro_fifo_sub.set_required_updates(n);
+
+				} else {
+					_sensor_gyro_sub.set_required_updates(n);
+				}
+
 
 				// run when there are enough new gyro samples, unregister accel
 				_sensor_accel_sub.unregisterCallback();
+				_sensor_accel_fifo_sub.unregisterCallback();
 
 				_intervals_configured = true; // stop monitoring topic publication rates
 

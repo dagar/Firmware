@@ -85,6 +85,8 @@ public:
 	 */
 	bool integral_ready() const { return (_integrated_samples >= _reset_samples_min) || (_integral_dt >= _reset_interval_min); }
 
+	float integral_dt() const { return _integral_dt; }
+
 	/* Reset integrator and return current integral & integration time
 	 *
 	 * @param integral_dt	Get the dt in us of the current integration.

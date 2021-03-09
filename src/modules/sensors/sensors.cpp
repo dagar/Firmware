@@ -523,7 +523,7 @@ void Sensors::InitializeVehicleIMU()
 				const bool multi_mode = (_param_sens_imu_mode.get() == 0);
 				const px4::wq_config_t &wq_config = multi_mode ? px4::ins_instance_to_wq(i) : px4::wq_configurations::INS0;
 
-				VehicleIMU *imu = new VehicleIMU(i, i, i, wq_config);
+				VehicleIMU *imu = new VehicleIMU(i, accel.device_id, gyro.device_id, wq_config);
 
 				if (imu != nullptr) {
 					// Start VehicleIMU instance and store

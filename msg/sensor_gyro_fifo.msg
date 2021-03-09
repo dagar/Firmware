@@ -12,6 +12,10 @@ int16[32] x               # angular velocity in the FRD board frame X-axis in ra
 int16[32] y               # angular velocity in the FRD board frame Y-axis in rad/s
 int16[32] z               # angular velocity in the FRD board frame Z-axis in rad/s
 
+float32 temperature       # temperature in degrees Celsius
+
+uint32 error_count
+
 uint8 rotation            # Direction the sensor faces (see Rotation enum)
 
-uint8 ORB_QUEUE_LENGTH = 2
+uint8 ORB_QUEUE_LENGTH = 8
