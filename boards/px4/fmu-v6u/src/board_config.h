@@ -284,7 +284,6 @@
 
 #define RC_SERIAL_PORT                     "/dev/ttyS5"
 #define RC_SERIAL_SINGLEWIRE
-#define RC_SERIAL_SWAP_RXTX
 
 /* Input Capture Channels. */
 #define INPUT_CAP1_TIMER                  1
