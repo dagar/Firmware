@@ -76,6 +76,7 @@ px4_add_board(
 		mavlink
 		mc_att_control
 		mc_hover_thrust_estimator
+		mc_indi_att_rate_control
 		mc_pos_control
 		mc_rate_control
 		#micrortps_bridge
