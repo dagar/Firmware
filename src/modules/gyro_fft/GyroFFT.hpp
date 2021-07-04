@@ -75,7 +75,7 @@ public:
 	bool init();
 
 private:
-	float EstimatePeakFrequency(int axis, int32_t k);
+	float EstimatePeakFrequencyBin(int axis, int32_t k);
 	void Run() override;
 	bool SensorSelectionUpdate(bool force = false);
 	void Update(const hrt_abstime &timestamp_sample);
@@ -110,9 +110,9 @@ private:
 
 	hrt_abstime _last_update[3][MAX_NUM_PEAKS] {};
 
-	int32_t _imu_gyro_fft_len{128};
+	int32_t _imu_gyro_fft_len{256};
 
-	SlidingDFT<float, 128> _sliding_dft[3];
+	SlidingDFT<float, 256> _sliding_dft[3];
 
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::IMU_GYRO_RATEMAX>) _param_imu_gyro_ratemax,
