@@ -35,7 +35,7 @@ px4_add_module(
 	MODULE modules__gyro_fft
 	MAIN gyro_fft
 	STACK_MAIN
-		4096
+		8192
 	COMPILE_FLAGS
 		${MAX_CUSTOM_OPT_LEVEL}
 	SRCS

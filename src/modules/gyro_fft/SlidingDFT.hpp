@@ -77,96 +77,241 @@ SOFTWARE.
 
 #pragma once
 
-#define _USE_MATH_DEFINES
-#include <complex>
 #include <math.h>
 
-template <class NumberFormat, size_t DFT_Length>
+class Complex;
+Complex operator*(const Complex &, const Complex &);
+Complex operator/(const Complex &, const Complex &);
+Complex operator-(const Complex &, const Complex &);
+Complex operator-(const Complex &, const float &);
+
+class Complex
+{
+public:
+	Complex(float real = 0.f, float imag = 0.f) : _real(real), _imag(imag) {}
+	Complex(const Complex &c) : _real(c.real()), _imag(c.imag()) {}
+
+	float real() const { return _real; }
+	float imag() const { return _imag; }
+
+	float norm() const { return _real * _real + _imag * _imag; }
+
+	Complex &operator= (const float &re) { _real = re; _imag = 0.f; return *this;}
+	Complex &operator+=(const float &re) { _real += re; return *this;}
+	Complex &operator-=(const float &re) { _real -= re; return *this;}
+	Complex &operator*=(const float &re) { _real *= re; _imag *= re; return *this;}
+	Complex &operator/=(const float &re) { _real /= re; _imag /= re; return *this;}
+
+	Complex &operator= (const Complex &c)
+	{
+		_real = c.real();
+		_imag = c.imag();
+		return *this;
+	}
+
+	Complex &operator+=(const Complex &c)
+	{
+		_real += c.real();
+		_imag += c.imag();
+		return *this;
+	}
+
+	Complex &operator-=(const Complex &c)
+	{
+		_real -= c.real();
+		_imag -= c.imag();
+		return *this;
+	}
+
+	Complex &operator*=(const Complex &c)
+	{
+		*this = *this * Complex(c.real(), c.imag());
+		return *this;
+	}
+
+	Complex &operator/=(const Complex &c)
+	{
+		*this = *this / Complex(c.real(), c.imag());
+		return *this;
+	}
+
+private:
+	float _real{0.f};
+	float _imag{0.f};
+};
+
+Complex operator+(const Complex &x, const Complex &y)
+{
+	Complex t{x};
+	t += y;
+	return t;
+}
+
+Complex operator*(const Complex &z, const Complex &w)
+{
+	float a = z.real();
+	float b = z.imag();
+	float c = w.real();
+	float d = w.imag();
+	float ac = a * c;
+	float bd = b * d;
+	float ad = a * d;
+	float bc = b * c;
+	float x = ac - bd;
+	float y = ad + bc;
+
+	if (isnan(x) && isnan(y)) {
+		bool recalc = false;
+
+		if (isinf(a) || isinf(b)) {
+			a = copysign(isinf(a) ? float(1) : float(0), a);
+			b = copysign(isinf(b) ? float(1) : float(0), b);
+
+			if (isnan(c)) {
+				c = copysign(float(0), c);
+			}
+
+			if (isnan(d)) {
+				d = copysign(float(0), d);
+			}
+
+			recalc = true;
+		}
+
+		if (isinf(c) || isinf(d)) {
+			c = copysign(isinf(c) ? float(1) : float(0), c);
+			d = copysign(isinf(d) ? float(1) : float(0), d);
+
+			if (isnan(a)) {
+				a = copysign(float(0), a);
+			}
+
+			if (isnan(b)) {
+				b = copysign(float(0), b);
+			}
+
+			recalc = true;
+		}
+
+		if (!recalc && (isinf(ac) || isinf(bd) || isinf(ad) || isinf(bc))) {
+			if (isnan(a)) {
+				a = copysign(float(0), a);
+			}
+
+			if (isnan(b)) {
+				b = copysign(float(0), b);
+			}
+
+			if (isnan(c)) {
+				c = copysign(float(0), c);
+			}
+
+			if (isnan(d)) {
+				d = copysign(float(0), d);
+			}
+
+			recalc = true;
+		}
+
+		if (recalc) {
+			x = float(INFINITY) * (a * c - b * d);
+			y = float(INFINITY) * (a * d + b * c);
+		}
+	}
+
+	return Complex(x, y);
+}
+
+Complex operator-(const Complex &x, const Complex &y)
+{
+	Complex t(x);
+	t -= y;
+	return t;
+}
+
+Complex operator-(const Complex &x, const float &y)
+{
+	Complex t(x);
+	t -= y;
+	return t;
+}
+
+template <size_t DFT_Length>
 class SlidingDFT
 {
-private:
-	/// Are the frequency domain values valid? (i.e. have at elast DFT_Length data
-	/// points been seen?)
-	bool data_valid = false;
-
-	/// Time domain samples are stored in this circular buffer.
-	NumberFormat x[DFT_Length] {};
-
-	/// Index of the next item in the buffer to be used. Equivalently, the number
-	/// of samples that have been seen so far modulo DFT_Length.
-	size_t x_index = 0;
-
-	/// Twiddle factors for the update algorithm
-	std::complex<NumberFormat> twiddle[DFT_Length];
-
-	/// Frequency domain values (unwindowed!)
-	std::complex<NumberFormat> S[DFT_Length];
-
 public:
-	/// Frequency domain values (windowed)
-	std::complex<NumberFormat> dft[DFT_Length];
-
-	/// A damping factor introduced into the recursive DFT algorithm to guarantee
-	/// stability.
-	NumberFormat damping_factor = std::nexttoward((NumberFormat)1, (NumberFormat)0);
-
-	/// Constructor
 	SlidingDFT()
 	{
-		const std::complex<NumberFormat> j(0.0, 1.0);
-		const NumberFormat N = DFT_Length;
-
 		// Compute the twiddle factors, and zero the x and S arrays
 		for (size_t k = 0; k < DFT_Length; k++) {
-			NumberFormat factor = (NumberFormat)(2.0 * M_PI) * k / N;
-			this->twiddle[k] = std::exp(j * factor);
-			this->S[k] = 0;
-			this->x[k] = 0;
+			float factor = (2.f * (float)M_PI) * k / DFT_Length;
+
+			_twiddle[k] = Complex(cosf(factor), sinf(factor));
 		}
 	}
 
 	/// Determine whether the output data is valid
-	bool is_data_valid()
-	{
-		return this->data_valid;
-	}
+	bool data_valid() const { return _data_valid; }
 
 	/// Update the calculation with a new sample
 	/// Returns true if the data are valid (because enough samples have been
 	/// presented), or false if the data are invalid.
-	bool update(NumberFormat new_x)
+	bool update(float new_x)
 	{
 		// Update the storage of the time domain values
-		const NumberFormat old_x = this->x[this->x_index];
-		this->x[this->x_index] = new_x;
+		const float old_x = _x[_x_index];
+		_x[_x_index] = new_x;
 
 		// Update the DFT
-		const NumberFormat r = this->damping_factor;
-		const NumberFormat r_to_N = pow(r, (NumberFormat)DFT_Length);
+		const float r = _damping_factor;
+		const float r_to_N = powf(r, (float)DFT_Length);
 
 		for (size_t k = 0; k < DFT_Length; k++) {
-			this->S[k] = this->twiddle[k] * (r * this->S[k] - r_to_N * old_x + new_x);
+			_S[k] = _twiddle[k] * (r * _S[k] - r_to_N * old_x + new_x);
 		}
 
 		// Apply the Hanning window
-		this->dft[0] = (NumberFormat)0.5 * this->S[0] - (NumberFormat)0.25 * (this->S[DFT_Length - 1] + this->S[1]);
+		_dft[0] = 0.5f * _S[0] - 0.25f * (_S[DFT_Length - 1] + _S[1]);
 
 		for (size_t k = 1; k < (DFT_Length - 1); k++) {
-			this->dft[k] = (NumberFormat)0.5 * this->S[k] - (NumberFormat)0.25 * (this->S[k - 1] + this->S[k + 1]);
+			_dft[k] = 0.5f * _S[k] - 0.25f * (_S[k - 1] + _S[k + 1]);
 		}
 
-		this->dft[DFT_Length - 1] = (NumberFormat)0.5 * this->S[DFT_Length - 1] - (NumberFormat)0.25 *
-					    (this->S[DFT_Length - 2] + this->S[0]);
+		_dft[DFT_Length - 1] = 0.5f * _S[DFT_Length - 1] - 0.25f * (_S[DFT_Length - 2] + _S[0]);
 
 		// Increment the counter
-		this->x_index++;
+		_x_index++;
 
-		if (this->x_index >= DFT_Length) {
-			this->data_valid = true;
-			this->x_index = 0;
+		if (_x_index >= DFT_Length) {
+			_data_valid = true;
+			_x_index = 0;
 		}
 
-		// Done.
-		return this->data_valid;
+		return _data_valid;
 	}
+
+	const auto &dft(int index) const { return _dft[index]; }
+
+private:
+
+	/// Frequency domain values (windowed)
+	Complex _dft[DFT_Length] {};
+
+	/// A damping factor introduced into the recursive DFT algorithm to guarantee stability.
+	float _damping_factor{0.9999f};
+
+	/// Are the frequency domain values valid? (i.e. have at elast DFT_Length data points been seen?)
+	bool _data_valid{false};
+
+	/// Time domain samples are stored in this circular buffer.
+	float _x[DFT_Length] {};
+
+	/// Index of the next item in the buffer to be used. Equivalently, the number of samples that have been seen so far modulo DFT_Length.
+	size_t _x_index{0};
+
+	/// Twiddle factors for the update algorithm
+	Complex _twiddle[DFT_Length] {};
+
+	/// Frequency domain values (unwindowed!)
+	Complex _S[DFT_Length] {};
 };
